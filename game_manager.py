@@ -15,7 +15,7 @@ while 1:
         print("Invalid action. Try again.")
         continue
 
-    state = game.perform_action(state, action)
+    state = game.get_next_state(state, action, player)
     val, terminal = game.is_terminal(state)
 
     if terminal:
