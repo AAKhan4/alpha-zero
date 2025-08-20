@@ -35,7 +35,11 @@ class TicTacToe:
         )
     
     def is_terminal(self, state, action):
-        return 1, self.check_win(state, action) or 0, np.all(state != 0)
+        if self.check_win(state, action):
+            return 1, True
+        elif np.all(state != 0):
+            return 0, True
+        return -1, False
 
     def get_opponent(self, player):
         return -player
