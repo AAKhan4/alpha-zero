@@ -18,7 +18,7 @@ while 1:
     print(state)
 
     if player == 1:
-        print("Player 1's turn (X)")
+        print("\nPlayer 1's turn (X)")
         valid_actions = game.get_valid_actions(state)
         print(valid_actions)
         action = int(input(f"Player {player}, enter your action (0-8): "))
@@ -27,6 +27,7 @@ while 1:
             print("Invalid action. Try again.")
             continue
     else:
+        print("\nPlayer 2's turn (O)")
         neutral_state = game.change_perspective(state, player)
         mcts_probs = monte_carlo.search(neutral_state)
         action = np.argmax(mcts_probs)
@@ -35,6 +36,7 @@ while 1:
     val, terminal = game.is_terminal(state, action)
 
     if terminal:
+        print(state)
         if val == 1:
             print(f"Player {player} wins!")
         elif val == 0:
