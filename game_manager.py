@@ -16,7 +16,7 @@ while 1:
         continue
 
     state = game.get_next_state(state, action, player)
-    val, terminal = game.is_terminal(state)
+    val, terminal = game.is_terminal(state, action)
 
     if terminal:
         if val == 1:
