@@ -2,47 +2,54 @@ import tic_tac_toe
 import mcts
 import numpy as np
 
+# Initialize the game
 game = tic_tac_toe.TicTacToe()
 
-player = 1
-state = game.get_initial_state()
+player = 1  # Player 1 starts
+state = game.get_initial_state()  # Get the initial game state
 
+# MCTS configuration
 args = {
-    "num_searches": 1000,
-    "c": 1.41
+    "num_searches": 1000,  # Number of searches for MCTS
+    "c": 1.41  # Exploration constant
 }
 
+# Initialize Monte Carlo Tree Search
 monte_carlo = mcts.MCTS(game, args)
 
 while 1:
-    print(state)
+    print(state)  # Display the current game state
 
     if player == 1:
+        # Player 1's turn (human input)
         print("\nPlayer 1's turn (X)")
-        valid_actions = game.get_valid_actions(state)
+        valid_actions = game.get_valid_actions(state)  # Get valid moves
         print(valid_actions)
         action = int(input(f"Player {player}, enter your action (0-8): "))
 
-        if valid_actions[action] == 0:
+        if valid_actions[action] == 0:  # Check for invalid moves
             print("Invalid action. Try again.")
             continue
     else:
+        # Player 2's turn (AI using MCTS)
         print("\nPlayer 2's turn (O)")
-        neutral_state = game.change_perspective(state, player)
-        mcts_probs = monte_carlo.search(neutral_state)
-        action = np.argmax(mcts_probs)
+        neutral_state = game.change_perspective(state, player)  # Adjust perspective for AI
+        mcts_probs = monte_carlo.search(neutral_state)  # Perform MCTS search
+        action = np.argmax(mcts_probs)  # Choose the best move
 
+    # Update the game state based on the chosen action
     state = game.get_next_state(state, action, player)
-    val, terminal = game.is_terminal(state, action)
+    val, terminal = game.is_terminal(state, action)  # Check if the game is over
 
     if terminal:
-        print(state)
+        print(state)  # Display the final state
         if val == 1:
-            print(f"Player {player} wins!")
+            print(f"Player {player} wins!")  # Declare winner
         elif val == 0:
-            print("It's a draw!")
+            print("It's a draw!")  # Declare draw
         else:
-            print("Game is still ongoing.")
+            print("Game is still ongoing.")  # Shouldn't occur here
         break
 
+    # Switch to the other player
     player = game.get_opponent(player)
