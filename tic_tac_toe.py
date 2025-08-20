@@ -20,6 +20,9 @@ class TicTacToe:
         return (state.reshape(-1) == 0).astype(np.uint8)
     
     def check_win(self, state, action):
+        if action == None:
+            return False
+
         row = action // self.col_count
         col = action % self.col_count
         player = state[row, col]
@@ -31,8 +34,14 @@ class TicTacToe:
              (row + col == self.row_count - 1 and np.all(np.diag(np.fliplr(state)) == player)))
         )
     
-    def is_terminal(self, state):
-        return 1, self.check_win(state, np.argmax(state)) or 0, np.all(state != 0)
+    def is_terminal(self, state, action):
+        return 1, self.check_win(state, action) or 0, np.all(state != 0)
 
     def get_opponent(self, player):
         return -player
+    
+    def get_opponent_val(self, val):
+        return -val
+    
+    def change_perspective(self, state, player):
+        return state * player
