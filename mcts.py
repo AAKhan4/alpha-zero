@@ -22,7 +22,7 @@ class Node:
         best_ucb = -np.inf
 
         for child in self.children:
-            ucb = child.get_ucb()
+            ucb = child.get_ucb(child)
             if ucb > best_ucb:
                 best_ucb = ucb
                 best_child = child
@@ -31,7 +31,7 @@ class Node:
     
     def get_ucb(self, child):
         q = (1 - ((child.value_sum / child.visit_count) + 1) / 2) if child.visit_count > 0 else 0
-        return q + self.args.c * np.sqrt(np.log(self.visit_count) / child.visit_count)
+        return q + self.args['c'] * np.sqrt(np.log(self.visit_count) / child.visit_count)
     
     def expand(self):
         if not self.expandable_actions.any():
@@ -88,7 +88,7 @@ class MCTS:
         # Perform the MCTS search
         root = Node(self.game, self.args, state)
 
-        for search in range(self.args.num_searches):
+        for search in range(self.args["num_searches"]):
             node = root
 
             # Selection
