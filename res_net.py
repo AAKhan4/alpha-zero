@@ -18,8 +18,10 @@ class ResBlock(nn.Module):
         return F.relu(x)
 
 class ResNet(nn.Module):
-    def __init__(self, game, num_resBlocks, num_hidden):
+    def __init__(self, game, num_resBlocks, num_hidden, device):
         super().__init__()
+        self.device = device
+
         self.startBlock = nn.Sequential(
             nn.Conv2d(3, num_hidden, kernel_size=3, padding=1),
             nn.BatchNorm2d(num_hidden),
@@ -46,6 +48,8 @@ class ResNet(nn.Module):
             nn.Linear(3 * game.row_count * game.col_count, 1),
             nn.Tanh()
         )
+
+        self.to(device)
 
     def forward(self, x):
         x = self.startBlock(x)
