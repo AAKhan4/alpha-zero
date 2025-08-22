@@ -1,6 +1,7 @@
 import tic_tac_toe
 import mcts
 import numpy as np
+import res_net
 
 # Initialize the game
 game = tic_tac_toe.TicTacToe()
@@ -11,11 +12,14 @@ state = game.get_initial_state()  # Get the initial game state
 # MCTS configuration
 args = {
     "num_searches": 1000,  # Number of searches for MCTS
-    "c": 1.41  # Exploration constant
+    "c": 2  # Exploration constant
 }
 
+model = res_net.ResNet(tic_tac_toe.TicTacToe, 4, 64)  # Initialize the neural network model
+model.eval()  # Set the model to evaluation mode
+
 # Initialize Monte Carlo Tree Search
-monte_carlo = mcts.MCTS(game, args)
+monte_carlo = mcts.MCTS(game, args, model)
 
 while 1:
     print(state)  # Display the current game state
