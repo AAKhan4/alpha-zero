@@ -1,25 +1,35 @@
+import torch
 import tic_tac_toe
-import mcts
 import numpy as np
 import res_net
 
+
 # Initialize the game
 game = tic_tac_toe.TicTacToe()
+
+# Declare device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 player = 1  # Player 1 starts
 state = game.get_initial_state()  # Get the initial game state
 
 # MCTS configuration
 args = {
-    "num_searches": 1000,  # Number of searches for MCTS
-    "c": 2  # Exploration constant
-}
+        "num_searches": 60,  # Number of searches for MCTS
+        "c": 2,  # Exploration constant
+        "num_iterations": 3,  # Number of training iterations
+        "num_self_play": 100,  # Number of self-play games
+        "num_epochs": 4,  # Number of training epochs
+        "batch_size": 64,  # Batch size for training
+        "temperature": 1.25,  # Temperature for action selection
+        "epsilon": 0.25,  # Epsilon for exploration
+        "alpha": 0.3  # Alpha for Dirichlet noise
+    }
 
-model = res_net.ResNet(game, 4, 64)  # Initialize the neural network model
-model.eval()  # Set the model to evaluation mode
+model = res_net.ResNet(game, 4, 64, device)  # Initialize the neural network model
 
-# Initialize Monte Carlo Tree Search
-monte_carlo = mcts.MCTS(game, args, model)
+model.load_state_dict(torch.load(f"./models/model_{args['num_iterations'] - 1}.pth", map_location=device))  # Load the trained model
+model.eval()  # Set model to evaluation mode
 
 while 1:
     print(state)  # Display the current game state
@@ -37,9 +47,14 @@ while 1:
     else:
         # Player 2's turn (AI using MCTS)
         print("\nPlayer 2's turn (O)")
-        neutral_state = game.change_perspective(state, player)  # Adjust perspective for AI
-        mcts_probs = monte_carlo.search(neutral_state)  # Perform MCTS search
-        action = np.argmax(mcts_probs)  # Choose the best move
+        encoded_state = game.get_encoded_state(state)
+        tensor_state = torch.tensor(encoded_state, device=device).unsqueeze(0)
+
+        policy, val = model(tensor_state)
+        policy = torch.softmax(policy, dim=1).squeeze(0).detach().cpu().numpy()
+        val = val.item()
+
+        action = np.argmax(policy)  # Choose the best move
 
     # Update the game state based on the chosen action
     state = game.get_next_state(state, action, player)
