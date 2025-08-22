@@ -58,3 +58,9 @@ class TicTacToe:
     def change_perspective(self, state, player):
         # Adjust board perspective based on the current player
         return state * player
+    
+    def get_encoded_state(self, state):
+        encoded = np.stack(
+            (state == -1, state == 0, state == 1)
+        ).astype(np.float32)
+        return encoded
