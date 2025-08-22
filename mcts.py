@@ -1,13 +1,9 @@
-import tic_tac_toe
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import res_net
 
 # Represents a node in the MCTS tree
 class Node:
-    def __init__(self, game, args, state, parent=None, action=None, prior=0):
+    def __init__(self, game, args, state, parent=None, action=None, prior=0, visit_count=0):
         self.game = game  # Game logic
         self.args = args  # MCTS parameters
         self.state = state  # Current game state
@@ -16,7 +12,7 @@ class Node:
         self.prior = prior  # Prior probability of this action
 
         self.children = []  # List of child nodes
-        self.visit_count = 0  # Number of visits to this node
+        self.visit_count = visit_count  # Number of visits to this node
         self.value_sum = 0.0  # Sum of values from simulations
 
     # Checks if all valid actions have been expanded
@@ -73,7 +69,20 @@ class MCTS:
     # Performs MCTS search and returns action probabilities
     @torch.no_grad()
     def search(self, state):
-        root = Node(self.game, self.args, state)
+        root = Node(self.game, self.args, state, visit_count=0)
+
+        policy, _ = self.model(
+            torch.tensor(self.game.get_encoded_state(root.state), device=self.model.device).unsqueeze(0)
+        )
+        policy = torch.softmax(policy, dim=1).squeeze(0).cpu().numpy()
+
+        policy = (1 - self.args["epsilon"]) * policy + self.args["epsilon"] * np.random.dirichlet([self.args["alpha"]] * self.game.action_size)
+        
+        valid_actions = self.game.get_valid_actions(root.state)
+        policy *= valid_actions
+        policy /= np.sum(policy) if np.sum(policy) > 0 else 1
+
+        root.expand(policy)
 
         for _ in range(self.args["num_searches"]):
             node = root
@@ -87,7 +96,7 @@ class MCTS:
 
             if not terminal:
                 policy, val = self.model(
-                    torch.tensor(self.game.get_encoded_state(node.state)).unsqueeze(0)
+                    torch.tensor(self.game.get_encoded_state(node.state), device=self.model.device).unsqueeze(0)
                 )
 
                 policy = torch.softmax(policy, dim=1).squeeze(0).cpu().numpy()
