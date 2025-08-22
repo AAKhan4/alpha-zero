@@ -15,7 +15,7 @@ args = {
     "c": 2  # Exploration constant
 }
 
-model = res_net.ResNet(tic_tac_toe.TicTacToe, 4, 64)  # Initialize the neural network model
+model = res_net.ResNet(game, 4, 64)  # Initialize the neural network model
 model.eval()  # Set the model to evaluation mode
 
 # Initialize Monte Carlo Tree Search
