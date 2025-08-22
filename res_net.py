@@ -1,9 +1,5 @@
-import numpy as np
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-torch.manual_seed(0)
 
 class ResBlock(nn.Module):
     def __init__(self, num_hidden):
