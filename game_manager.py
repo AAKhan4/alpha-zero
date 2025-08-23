@@ -2,7 +2,7 @@ import torch
 import tic_tac_toe
 import numpy as np
 import res_net
-import matplotlib.pyplot as plt
+import mcts
 
 
 # Initialize the game
@@ -29,8 +29,10 @@ args = {
 
 model = res_net.ResNet(game, 4, 64, device)  # Initialize the neural network model
 
-model.load_state_dict(torch.load(f"./models/model_{args['num_iterations'] - 1}.pth", map_location=device))  # Load the trained model
+model.load_state_dict(torch.load(f"./models/{game}_model_{args['num_iterations'] - 1}.pth", map_location=device))  # Load the trained model
 model.eval()  # Set model to evaluation mode
+
+monte_carlo = mcts.MCTS(game, args, model)  # Initialize MCTS
 
 while 1:
     print(state)  # Display the current game state
@@ -48,16 +50,8 @@ while 1:
     else:
         # Player 2's turn (AI using MCTS)
         print("\nPlayer 2's turn (O)")
-        encoded_state = game.get_encoded_state(state)  # Get the state from the opponent's perspective
-        tensor_state = torch.tensor(encoded_state, device=device).unsqueeze(0)
-
-        policy, val = model(tensor_state)
-        policy = torch.softmax(policy, dim=1).squeeze(0).detach().cpu().numpy()
-        policy *= valid_actions
-        policy /= np.sum(policy) if np.sum(policy) > 0 else 1
-        val = val.item()
-
-        action = np.argmax(policy)  # Choose the best move
+        mcts_probs = monte_carlo.search(state)
+        action = np.argmax(mcts_probs)  # Choose the best move
 
     # Update the game state based on the chosen action
     state = game.get_next_state(state, action, player)
