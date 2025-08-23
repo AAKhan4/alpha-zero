@@ -15,7 +15,7 @@ class ModelTrainer:
                 "num_searches": 60,
                 "c": 2,
                 "num_iterations": 3,
-                "num_self_play": 100,
+                "num_self_play": 500,
                 "num_epochs": 4,
                 "batch_size": 64,
                 "temperature": 1.25,
