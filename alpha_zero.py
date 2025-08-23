@@ -59,7 +59,7 @@ class AlphaZero:
 
             out_pol, out_val = self.model(state)
 
-            loss = F.cross_entropy(out_pol, pol_targets) + F.mse_loss(out_val, val_targets)
+            loss = F.kl_div(out_pol, pol_targets) + F.mse_loss(out_val, val_targets)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -79,5 +79,5 @@ class AlphaZero:
 
             os.makedirs("./models", exist_ok=True)
 
-            torch.save(self.model.state_dict(), f"./models/model_{i}.pth")
-            torch.save(self.optimizer.state_dict(), f"./models/optimizer_{i}.pth")
+            torch.save(self.model.state_dict(), f"./models/{self.game}_model_{i}.pth")
+            torch.save(self.optimizer.state_dict(), f"./models/{self.game}_optimizer_{i}.pth")
