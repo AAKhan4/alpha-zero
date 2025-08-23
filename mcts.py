@@ -25,7 +25,7 @@ class Node:
         best_ucb = -np.inf
 
         for child in self.children:
-            ucb = child.get_ucb(child)
+            ucb = self.get_ucb(child)
             if ucb > best_ucb:
                 best_ucb = ucb
                 best_child = child
@@ -78,8 +78,8 @@ class MCTS:
 
         policy = (1 - self.args["epsilon"]) * policy + self.args["epsilon"] * np.random.dirichlet([self.args["alpha"]] * self.game.action_size)
         
-        valid_actions = self.game.get_valid_actions(root.state)
-        policy *= valid_actions
+        valid_actions = self.game.get_valid_actions(root.state).astype(bool)
+        policy = policy * valid_actions
         policy /= np.sum(policy) if np.sum(policy) > 0 else 1
 
         root.expand(policy)
@@ -100,8 +100,8 @@ class MCTS:
                 )
 
                 policy = torch.softmax(policy, dim=1).squeeze(0).cpu().numpy()
-                valid_actions = self.game.get_valid_actions(node.state)
-                policy *= valid_actions
+                valid_actions = self.game.get_valid_actions(node.state).astype(bool)
+                policy = policy * valid_actions
                 policy /= np.sum(policy) if np.sum(policy) > 0 else 1
 
                 val = val.item()
