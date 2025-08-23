@@ -2,6 +2,7 @@ import torch
 import tic_tac_toe
 import numpy as np
 import res_net
+import matplotlib.pyplot as plt
 
 
 # Initialize the game
@@ -47,12 +48,22 @@ while 1:
     else:
         # Player 2's turn (AI using MCTS)
         print("\nPlayer 2's turn (O)")
-        encoded_state = game.get_encoded_state(state)
+        encoded_state = game.get_encoded_state(state)  # Get the state from the opponent's perspective
         tensor_state = torch.tensor(encoded_state, device=device).unsqueeze(0)
+
+        print(tensor_state)
 
         policy, val = model(tensor_state)
         policy = torch.softmax(policy, dim=1).squeeze(0).detach().cpu().numpy()
+        policy *= valid_actions
+        policy /= np.sum(policy) if np.sum(policy) > 0 else 1
         val = val.item()
+
+        plt.bar(range(game.action_size), policy)
+        plt.xlabel("Actions")
+        plt.ylabel("Probabilities")
+        plt.title("Action Probabilities")
+        plt.show()
 
         action = np.argmax(policy)  # Choose the best move
 
