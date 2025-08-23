@@ -26,6 +26,7 @@ class AlphaZero:
             mem.append((neutral_state, mcts_probs, player))
 
             action_probs = mcts_probs ** (1 / self.args["temperature"])
+            action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
             action = np.random.choice(self.game.action_size, p=action_probs)
 
             state = self.game.get_next_state(state, action, player)
@@ -47,16 +48,14 @@ class AlphaZero:
     def train(self, mem):
         random.shuffle(mem)
         for i in range(0, len(mem), self.args["batch_size"]):
-            batch = mem[i:min(len(mem) - 1, i + self.args["batch_size"])]
+            batch = mem[i:min(len(mem), i + self.args["batch_size"])]
             state, pol_targets, val_targets = zip(*batch)
 
             state, pol_targets, val_targets = np.array(state), np.array(pol_targets), np.array(val_targets).reshape(-1, 1)
 
-            state, pol_targets, val_targets = (
-                torch.tensor(state, dtype=torch.float32, device=self.model.device),
-                torch.tensor(pol_targets, dtype=torch.float32, device=self.model.device),
-                torch.tensor(val_targets, dtype=torch.float32, device=self.model.device)
-            )
+            state = torch.tensor(state, dtype=torch.float32, device=self.model.device)
+            pol_targets = torch.tensor(pol_targets, dtype=torch.float32, device=self.model.device)
+            val_targets = torch.tensor(val_targets, dtype=torch.float32, device=self.model.device)
 
             out_pol, out_val = self.model(state)
 
