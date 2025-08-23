@@ -7,6 +7,9 @@ class TicTacToe:
         self.col_count = 3
         self.action_size = self.row_count * self.col_count
     
+    def __repr__(self):
+        return "TicTacToe"
+    
     def get_initial_state(self):
         # Create an empty board (all zeros)
         return np.zeros((self.row_count, self.col_count))
