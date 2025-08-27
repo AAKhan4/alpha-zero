@@ -15,35 +15,50 @@ class AlphaZero:
         self.mcts = mcts.MCTS(game, args, model)
 
     def self_play(self):
-        mem = []
+        ret_mem = []
         player = 1
-        state = self.game.get_initial_state()
+        spGames = [SPG(self.game) for _ in range(self.args["num_parallel_games"])]
 
-        while 1:
-            neutral_state = self.game.change_perspective(state, player)
-            mcts_probs = self.mcts.search(neutral_state)
+        while len(spGames) > 0:
+            states = np.stack([spg.state for spg in spGames])
 
-            mem.append((neutral_state, mcts_probs, player))
+            neutral_states = self.game.change_perspective(states, player)
+            self.mcts.search(neutral_states, spGames)
 
-            action_probs = mcts_probs ** (1 / self.args["temperature"])
-            action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
-            action = np.random.choice(self.game.action_size, p=action_probs)
+            for i  in range(len(spGames))[::-1]:
+                spg = spGames[i]
 
-            state = self.game.get_next_state(state, action, player)
+                # Compute action probabilities based on visit counts
+                mcts_probs = np.zeros(self.game.action_size)
+                for child in spg.root.children:
+                    mcts_probs[child.action] = child.visit_count
 
-            val, terminal = self.game.is_terminal(state, action)
+                mcts_probs /= np.sum(mcts_probs)
 
-            if terminal:
-                returnMem = []
-                for hist_state, hist_probs, hist_player in mem:
-                    hist_outcome = val if hist_player == player else self.game.get_opponent_val(val)
-                    returnMem.append((
-                        self.game.get_encoded_state(hist_state),
-                        hist_probs,
-                        hist_outcome
-                    ))
+                spg.mem.append((spg.root.state, mcts_probs, player))
 
-                return returnMem
+                action_probs = mcts_probs ** (1 / self.args["temperature"])
+                action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
+                action = np.random.choice(self.game.action_size, p=action_probs)
+
+                spg.state = self.game.get_next_state(spg.state, action, player)
+
+                val, terminal = self.game.is_terminal(spg.state, action)
+
+                if terminal:
+                    for hist_state, hist_probs, hist_player in spg.mem:
+                        hist_outcome = val if hist_player == player else self.game.get_opponent_val(val)
+                        ret_mem.append((
+                            self.game.get_encoded_state(hist_state),
+                            hist_probs,
+                            hist_outcome
+                        ))
+
+                    del spGames[i]
+            
+            player = self.game.get_opponent(player)
+
+        return ret_mem
 
     def train(self, mem):
         random.shuffle(mem)
@@ -70,7 +85,7 @@ class AlphaZero:
             mem = []
 
             self.model.eval()
-            for _ in tqdm(range(self.args["num_self_play"])):
+            for _ in tqdm(range(self.args["num_self_play"] // self.args["num_parallel_games"])):
                 mem.extend(self.self_play())
 
             self.model.train()
@@ -81,3 +96,9 @@ class AlphaZero:
 
             torch.save(self.model.state_dict(), f"./models/{self.game}_model_{i}.pth")
             torch.save(self.optimizer.state_dict(), f"./models/{self.game}_optimizer_{i}.pth")
+
+class SPG:
+    def __init__(self, game):
+        self.state = game.get_initial_state()
+        self.mem = []
+        self.root, self.node = None, None
