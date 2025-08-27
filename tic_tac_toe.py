@@ -66,4 +66,7 @@ class TicTacToe:
         encoded = np.stack(
             (state == -1, state == 0, state == 1)
         ).astype(np.float32)
+
+        if len(state.shape) == 3:
+            encoded = np.swapaxes(encoded, 0, 1) # (batch, channels, rows, cols)
         return encoded
