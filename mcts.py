@@ -68,54 +68,59 @@ class MCTS:
 
     # Performs MCTS search and returns action probabilities
     @torch.no_grad()
-    def search(self, state):
-        root = Node(self.game, self.args, state, visit_count=0)
-
+    def search(self, states, spGames):
         policy, _ = self.model(
-            torch.tensor(self.game.get_encoded_state(root.state), device=self.model.device).unsqueeze(0)
+            torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
         )
-        policy = torch.softmax(policy, dim=1).squeeze(0).cpu().numpy()
+        policy = torch.softmax(policy, dim=1).cpu().numpy()
 
-        policy = (1 - self.args["epsilon"]) * policy + self.args["epsilon"] * np.random.dirichlet([self.args["alpha"]] * self.game.action_size)
-        
-        valid_actions = self.game.get_valid_actions(root.state).astype(bool)
-        policy = policy * valid_actions
-        policy /= np.sum(policy) if np.sum(policy) > 0 else 1
+        policy = (1 - self.args["epsilon"]) * policy + self.args["epsilon"] * np.random.dirichlet([self.args["alpha"]] * self.game.action_size, size=policy.shape[0])
 
-        root.expand(policy)
+        for i, spg in enumerate(spGames):
+            spg_policy = policy[i]
+            valid_actions = self.game.get_valid_actions(states[i]).astype(bool)
+            spg_policy = policy * valid_actions
+            spg_policy /= np.sum(spg_policy) if np.sum(spg_policy) > 0 else 1
+
+            spg.root = Node(self.game, self.args, states[i], visit_count=0)
+            spg.root.expand(policy)
 
         for _ in range(self.args["num_searches"]):
-            node = root
+            for spg in spGames:
+                spg.node = None
+                node = spg.root
 
-            # Selection: Traverse the tree to find a node to expand
-            while node.is_fully_expanded():
-                node = node.select()
-            
-            val, terminal = self.game.is_terminal(node.state, node.action)
-            val = self.game.get_opponent_val(val)
+                # Selection: Traverse the tree to find a node to expand
+                while node.is_fully_expanded():
+                    node = node.select()
+                
+                val, terminal = self.game.is_terminal(node.state, node.action)
+                val = self.game.get_opponent_val(val)
 
-            if not terminal:
+                if terminal:
+                    # If terminal, backpropagate the result
+                    node.backpropagate(val)
+                else:
+                    # If not terminal, use the model to get policy and value
+                    # for the new state
+                    spg.node = node
+
+            expandable_spgs = [i for i in range(len(spGames)) if spGames[i].node is not None]
+            if len(expandable_spgs) > 0:
+                states = np.stack([spGames[i].node.state for i in expandable_spgs])
                 policy, val = self.model(
-                    torch.tensor(self.game.get_encoded_state(node.state), device=self.model.device).unsqueeze(0)
+                    torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
                 )
+                policy = torch.softmax(policy, dim=1).cpu().numpy()
+                val = val.cpu().numpy()
 
-                policy = torch.softmax(policy, dim=1).squeeze(0).cpu().numpy()
+            for i, spg_idx in enumerate(expandable_spgs):
+                node = spGames[spg_idx].node
+                spg_policy, spg_val = policy[i], val[i]
                 valid_actions = self.game.get_valid_actions(node.state).astype(bool)
-                policy = policy * valid_actions
-                policy /= np.sum(policy) if np.sum(policy) > 0 else 1
-
-                val = val.item()
+                spg_policy = spg_policy * valid_actions
+                spg_policy /= np.sum(spg_policy) if np.sum(spg_policy) > 0 else 1
 
                 # Expansion: Add new child nodes for all valid actions
-                node.expand(policy)
-
-            # Backpropagation: Update the tree with the simulation result
-            node.backpropagate(val)
-    
-        # Compute action probabilities based on visit counts
-        action_probs = np.zeros(self.game.action_size)
-        for child in root.children:
-            action_probs[child.action] = child.visit_count
-
-        action_probs /= np.sum(action_probs)
-        return action_probs
+                node.expand(spg_policy)
+                node.backpropagate(spg_val)
