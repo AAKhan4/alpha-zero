@@ -1,12 +1,12 @@
 import torch
-import tic_tac_toe
 import numpy as np
 import res_net
 import mcts
-
+from game_select import GameSelection
 
 # Initialize the game
-game = tic_tac_toe.TicTacToe()
+game = GameSelection().pick_game()
+args = GameSelection().get_args(game)
 
 # Declare device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -15,17 +15,6 @@ player = 1  # Player 1 starts
 state = game.get_initial_state()  # Get the initial game state
 
 # MCTS configuration
-args = {
-        "num_searches": 60,  # Number of searches for MCTS
-        "c": 2,  # Exploration constant
-        "num_iterations": 3,  # Number of training iterations
-        "num_self_play": 100,  # Number of self-play games
-        "num_epochs": 4,  # Number of training epochs
-        "batch_size": 64,  # Batch size for training
-        "temperature": 1.25,  # Temperature for action selection
-        "epsilon": 0.25,  # Epsilon for exploration
-        "alpha": 0.3  # Alpha for Dirichlet noise
-    }
 
 model = res_net.ResNet(game, 4, 64, device)  # Initialize the neural network model
 
