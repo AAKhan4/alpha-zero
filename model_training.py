@@ -2,48 +2,15 @@ import torch
 
 from alpha_zero import AlphaZero
 import res_net
-import tic_tac_toe
-import connect_four
+from game_select import GameSelection
 
 
 class ModelTrainer:
     def __init__(self, game=None, args=None):
-        if game is None:
-            print("Which game to train on?")
-            print("0- tic-tac-toe")
-            print("1- connect-four")
+            
+        game = game if game else GameSelection().pick_game()
 
-            if int(input("Enter choice: ")) == 1:
-                game = connect_four.ConnectFour()
-            else:
-                game = tic_tac_toe.TicTacToe()
-
-        if args is None and isinstance(game, connect_four.ConnectFour):
-            args = {
-                "num_searches": 600,
-                "c": 2,
-                "num_iterations": 8,
-                "num_self_play": 500,
-                "num_parallel_games": 100,
-                "num_epochs": 4,
-                "batch_size": 128,
-                "temperature": 1.25,
-                "epsilon": 0.25,
-                "alpha": 0.3
-            }
-        elif args is None and isinstance(game, tic_tac_toe.TicTacToe):
-            args = {
-                "num_searches": 60,
-                "c": 2,
-                "num_iterations": 3,
-                "num_self_play": 500,
-                "num_parallel_games": 10,
-                "num_epochs": 4,
-                "batch_size": 64,
-                "temperature": 1.25,
-                "epsilon": 0.25,
-                "alpha": 0.3
-            }
+        args = args if args else GameSelection().get_args(game)
 
         print(f"\nTraining on {game} with args: {args}\n")
         self.run(game, args)
@@ -57,5 +24,6 @@ class ModelTrainer:
 
         alpha_zero = AlphaZero(model, optimizer, game, args)
         alpha_zero.learn()
+
 
 ModelTrainer()  # Start training the model
