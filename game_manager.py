@@ -1,8 +1,8 @@
 import torch
 import numpy as np
-import res_net
-import mcts
-from game_select import GameSelection
+from core.mcts.res_net import ResNet
+from core.mcts.mcts import MCTS
+from games.game_select import GameSelection
 
 # Initialize the game
 game = GameSelection().pick_game()
@@ -14,14 +14,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 player = 1  # Player 1 starts
 state = game.get_initial_state()  # Get the initial game state
 
-# MCTS configuration
 
-model = res_net.ResNet(game, 4, 64, device)  # Initialize the neural network model
+model = ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize the neural network model
 
-model.load_state_dict(torch.load(f"./models/{game}_model_{args['num_iterations'] - 1}.pth", map_location=device))  # Load the trained model
+model.load_state_dict(torch.load(f"./models/{game}/model_{args['num_iterations'] - 1}.pth", map_location=device))  # Load the trained model
 model.eval()  # Set model to evaluation mode
 
-monte_carlo = mcts.MCTS(game, args, model)  # Initialize MCTS
+monte_carlo = MCTS(game, args, model)  # Initialize MCTS
 
 while 1:
     print(state)  # Display the current game state
@@ -30,7 +29,7 @@ while 1:
         # Player 1's turn (human input)
         print("\nPlayer 1's turn (X)")
         valid_actions = game.get_valid_actions(state)  # Get valid moves
-        print(valid_actions)
+        print([i for i in range(len(valid_actions)) if valid_actions[i] == 1])  # Show valid actions
         action = int(input(f"Player {player}, enter your action (0-8): "))
 
         if valid_actions[action] == 0:  # Check for invalid moves

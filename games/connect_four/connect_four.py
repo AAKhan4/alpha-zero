@@ -16,30 +16,48 @@ class ConnectFour:
         return np.zeros((self.row_count, self.col_count))
     
     def get_next_state(self, state, action, player):
-        # Apply action to the board and return the updated state
-        row = np.max(np.where(state[:, action] == 0))
-        state[row, action] = player
+        # Convert flat action to column
+        col = action % self.col_count
+        # Find the lowest empty row in the selected column
+        empty_rows = np.where(state[:, col] == 0)[0]
+        if empty_rows.size > 0:
+            row = empty_rows[-1]
+            state[row, col] = player
         return state
 
     def get_valid_actions(self, state):
-        # Return valid actions (empty cells) as a binary mask
-        return (state[0] == 0).astype(np.uint8)
+        # Return a (42,) mask: 1 for the top empty cell in each column, 0 elsewhere
+        mask = np.zeros(self.action_size, dtype=np.uint8)
+        top_empty_cells = np.where(state[0, :] == 0)[0]
+        for col in top_empty_cells:
+            row = np.max(np.where(state[:, col] == 0))
+            mask[row * self.col_count + col] = 1
+        return mask
     
     def check_win(self, state, action):
         # Check if the last action resulted in a win
-        if action == None:
+        if action is None:
             return False
 
-        row = np.min(np.where(state[:, action] != 0))
-        player = state[row, action]
+        col = action % self.col_count
+        row = np.max(np.where(state[:, col] != 0))
+        player = state[row, col]
 
         def count_direction(delta_row, delta_col):
-            for i in range(1, self.win_length):
-                r = row + delta_row * i
-                c = action + delta_col * i
-                if r < 0 or r >= self.row_count or c < 0 or c >= self.col_count or state[r, c] != player:
-                    return i - 1
-                return self.win_length - 1
+            r, c = row, col
+            count = 0
+            while True:
+                r += delta_row
+                c += delta_col
+                if (
+                    0 <= r < self.row_count and
+                    0 <= c < self.col_count and
+                    state[r, c] == player
+                ):
+                    count += 1
+                else:
+                    break
+            return count
         
         return (
             count_direction(1, 0) + count_direction(-1, 0) + 1 >= self.win_length or  # Vertical

@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 
-from tic_tac_toe import TicTacToe
+from games.tic_tac_toe.tic_tac_toe import TicTacToe
 
-from res_net import ResNet
+from core.mcts.res_net import ResNet
 
 import torch
 

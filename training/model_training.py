@@ -1,8 +1,8 @@
 import torch
 
-from alpha_zero import AlphaZero
-import res_net
-from game_select import GameSelection
+from core.alpha_zero import AlphaZero
+from core.mcts.res_net import ResNet
+from games.game_select import GameSelection
 
 
 class ModelTrainer:
@@ -18,7 +18,7 @@ class ModelTrainer:
     def run(self, game, args, model=None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        model = model if model else res_net.ResNet(game, 9, 128, device)  # Initialize the neural network model
+        model = model if model else ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize the neural network model
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)  # Adam optimizer
 
