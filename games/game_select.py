@@ -1,6 +1,6 @@
 from games.tic_tac_toe.tic_tac_toe import TicTacToe
 from games.connect_four.connect_four import ConnectFour
-from games.training_args import TrainingArgsBuilder
+from training.training_args import TrainingArgsBuilder
 
 class GameSelection:
     def pick_game(self):
