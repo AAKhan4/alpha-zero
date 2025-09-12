@@ -17,6 +17,7 @@ class ModelTrainer:
 
     def run(self, game, args, model=None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}\n")
 
         model = model if model else ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize the neural network model
 
