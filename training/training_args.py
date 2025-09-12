@@ -1,7 +1,7 @@
 class TrainingArgsBuilder:
     def __init__(self, game):
         self.args = {
-            "num_searches": 60,
+            "num_searches": 80,
             "c": 2,
             "num_iterations": 4,
             "num_self_play": 500,
@@ -19,9 +19,9 @@ class TrainingArgsBuilder:
     def build_args(self, game):
         if game.__class__.__name__ == "ConnectFour":
             self.args.update({
-                "num_searches": 300,
+                "num_searches": 400,
                 "num_iterations": 8,
-                "num_epochs": 5,
+                "num_epochs": 4,
                 "batch_size": 128,
                 "res_blocks": 9,
                 "channels": 128
