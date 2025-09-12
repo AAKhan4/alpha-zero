@@ -2,13 +2,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ResBlock(nn.Module):
-    def __init__(self, num_hidden):
+    def __init__(self, num_channels):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(num_hidden, num_hidden, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(num_hidden)
-        self.conv2 = nn.Conv2d(num_hidden, num_hidden, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(num_hidden)
+        self.conv1 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(num_channels)
+        self.conv2 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(num_channels)
     
     def forward(self, x):
         residual = x
@@ -18,22 +18,22 @@ class ResBlock(nn.Module):
         return F.relu(x)
 
 class ResNet(nn.Module):
-    def __init__(self, game, num_resBlocks, num_hidden, device):
+    def __init__(self, game, num_resBlocks, num_channels, device):
         super().__init__()
         self.device = device
 
         self.startBlock = nn.Sequential(
-            nn.Conv2d(3, num_hidden, kernel_size=3, padding=1),
-            nn.BatchNorm2d(num_hidden),
+            nn.Conv2d(3, num_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_channels),
             nn.ReLU()
         )
 
         self.backBone = nn.ModuleList(
-            [ResBlock(num_hidden) for _ in range(num_resBlocks)]
+            [ResBlock(num_channels) for _ in range(num_resBlocks)]
         )
 
         self.policyHead = nn.Sequential(
-            nn.Conv2d(num_hidden, 32, kernel_size=3, padding=1),
+            nn.Conv2d(num_channels, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Flatten(),
@@ -41,7 +41,7 @@ class ResNet(nn.Module):
         )
 
         self.valueHead = nn.Sequential(
-            nn.Conv2d(num_hidden, 3, kernel_size=3, padding=1),
+            nn.Conv2d(num_channels, 3, kernel_size=3, padding=1),
             nn.BatchNorm2d(3),
             nn.ReLU(),
             nn.Flatten(),
