@@ -20,16 +20,8 @@ class Node:
 
     # Selects the child node with the highest Upper Confidence Bound (UCB) score
     def select(self):
-        best_child = None
-        best_ucb = -np.inf  # Initialize with negative infinity
-
-        for child in self.children:
-            ucb = self.get_ucb(child)  # Calculate UCB score for each child
-            if ucb > best_ucb:  # Update the best child if a higher UCB is found
-                best_ucb = ucb
-                best_child = child
-
-        return best_child
+        # Use max with a key function to find the child with the highest UCB score
+        return max(self.children, key=self.get_ucb)
 
     # Calculates the UCB score for a given child node
     def get_ucb(self, child):
@@ -123,9 +115,10 @@ class MCTS:
         action_probs /= np.sum(action_probs)
         return action_probs
 
-    # Performs MCTS search and returns action probabilities for parallel game states
-    @torch.no_grad()  # Disable gradient computation for efficiency
-    def parallel_search(self, states, spGames):
+
+    # Performs MCTS for multiple self-play games in parallel
+    @torch.no_grad()
+    def parallel_search(self, states, games):
         # Get initial policy and value predictions from the model
         policy, _ = self.model(
             torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
@@ -137,20 +130,22 @@ class MCTS:
             [self.args["alpha"]] * self.game.action_size, size=policy.shape[0]
         )
 
-        # Initialize the root nodes for all search games
-        for i, spg in enumerate(spGames):
-            spg_policy = policy[i]
-            valid_actions = self.game.get_valid_actions(states[i])  # Mask invalid actions
-            spg_policy *= valid_actions  # Apply mask
-            spg_policy /= np.sum(spg_policy) if np.sum(spg_policy) > 0 else 1  # Normalize probabilities
-            spg.root = Node(self.game, self.args, states[i], visit_count=1)  # Create root node
-            spg.root.expand(spg_policy)  # Expand root node with initial policy
+        # Mask invalid actions and normalize probabilities for all states
+        valid_actions = np.stack([self.game.get_valid_actions(state) for state in states])  # Batch valid actions
+        policy *= valid_actions  # Mask invalid actions for all states
+        policy /= np.sum(policy, axis=1, keepdims=True)  # Normalize probabilities across actions
+
+        # Initialize root nodes for all parallel games
+        for i, game in enumerate(games):
+            game.root = Node(self.game, self.args, states[i], visit_count=0)
+            game.root.expand(policy[i])
 
         # Perform the specified number of MCTS searches
         for _ in range(self.args["num_searches"]):
-            for spg in spGames:
-                spg.node = None  # Reset the expandable node
-                node = spg.root  # Start from the root node
+            expandable_nodes = []
+            for game in games:
+                game.node = None  # Reset the expandable node
+                node = game.root  # Start from the root node
 
                 # Selection: Traverse the tree to find a node to expand
                 while node.is_fully_expanded():
@@ -158,20 +153,18 @@ class MCTS:
 
                 # Check if the selected node is terminal
                 val, terminal = self.game.is_terminal(node.state, node.action)
-                val = self.game.get_opponent_val(val)  # Flip value for the opponent's perspective
 
                 if terminal:
                     # If terminal, backpropagate the result
+                    val = self.game.get_opponent_val(val)  # Flip value for the opponent's perspective
                     node.backpropagate(val)
                 else:
-                    # If not terminal, mark the node for expansion
-                    spg.node = node
+                    expandable_nodes.append(node)
 
             # Collect all nodes that can be expanded
-            expandable_spgs = [i for i in range(len(spGames)) if spGames[i].node is not None]
-            if len(expandable_spgs) > 0:
+            if expandable_nodes:
                 # Get states for all expandable nodes
-                states = np.stack([spGames[i].node.state for i in expandable_spgs])
+                states = np.stack([node.state for node in expandable_nodes])
                 # Get policy and value predictions for these states
                 policy, val = self.model(
                     torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
@@ -179,15 +172,13 @@ class MCTS:
                 policy = torch.softmax(policy, dim=1).cpu().numpy()  # Apply softmax to policy
                 val = val.cpu().numpy()  # Convert value tensor to numpy
 
-            # Expand and backpropagate for each expandable node
-            for i, spg_idx in enumerate(expandable_spgs):
-                node = spGames[spg_idx].node
-                spg_policy, spg_val = policy[i], val[i]
-                valid_actions = self.game.get_valid_actions(node.state).astype(bool)  # Mask invalid actions
-                spg_policy = spg_policy * valid_actions  # Apply mask
-                spg_policy /= np.sum(spg_policy) if np.sum(spg_policy) > 0 else 1  # Normalize probabilities
 
-                # Expand the node with the new policy
-                node.expand(spg_policy)
-                # Backpropagate the value
-                node.backpropagate(spg_val)
+            # Mask invalid actions and normalize probabilities for all states
+            valid_actions = np.stack([self.game.get_valid_actions(state) for state in states])  # Batch valid actions
+            policy *= valid_actions  # Mask invalid actions for all states
+            policy /= np.sum(policy, axis=1, keepdims=True)  # Normalize probabilities across actions
+
+            # Expand and backpropagate for all expandable nodes
+            for i, node in enumerate(expandable_nodes):
+                node.expand(policy[i])  # Expand the node with the new policy
+                node.backpropagate(val[i])  # Backpropagate the value
