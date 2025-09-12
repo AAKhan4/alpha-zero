@@ -5,10 +5,10 @@ class TrainingArgsBuilder:
             "c": 2,
             "num_iterations": 4,
             "num_self_play": 500,
-            "num_parallel_games": 100,
+            "num_parallel_games": 128,
             "num_epochs": 4,
             "batch_size": 64,
-            "temperature": 1.1,
+            "temperature": 1.2,
             "epsilon": 0.25,
             "alpha": 0.3,
             "res_blocks": 4,
@@ -19,7 +19,7 @@ class TrainingArgsBuilder:
     def build_args(self, game):
         if game.__class__.__name__ == "ConnectFour":
             self.args.update({
-                "num_searches": 400,
+                "num_searches": 600,
                 "num_iterations": 8,
                 "num_epochs": 4,
                 "batch_size": 128,
