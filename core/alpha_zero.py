@@ -6,6 +6,10 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from typing import List, Dict, Tuple
+import multiprocessing
+
+from core.mcts.res_net import ResNet
+
 
 class AlphaZero:
     def __init__(self, model, optimizer, game, args: Dict):
@@ -20,16 +24,16 @@ class AlphaZero:
         # Perform self-play to generate training data
         ret_mem = []  # Memory to store game data
         player = 1  # Start with player 1
-        spGames = [SPG(self.game) for _ in range(self.args["num_parallel_games"])]  # Parallel games
+        games = [SPG(self.game) for _ in range(self.args["num_parallel_games"])]  # Parallel games
 
-        while spGames:
+        while games:
             # Collect states and perform MCTS for all games
-            states = np.stack([spg.state for spg in spGames])
+            states = np.stack([spg.state for spg in games])
             neutral_states = self.game.change_perspective(states, player)
-            self.mcts.parallel_search(neutral_states, spGames)
+            self.mcts.parallel_search(neutral_states, games)
 
-            for i in range(len(spGames) - 1, -1, -1):
-                spg = spGames[i]
+            for i in range(len(games) - 1, -1, -1):
+                spg = games[i]
                 mcts_probs = self.calc_mcts_probs(spg)  # Compute MCTS probabilities
                 spg.mem.append((spg.root.state, mcts_probs, player))
 
@@ -40,7 +44,7 @@ class AlphaZero:
                 if terminal:
                     # Backpropagate results and remove finished games
                     self.backpropagate(spg, val, player, ret_mem)
-                    spGames.pop(i)
+                    games.pop(i)
 
             player = self.game.get_opponent(player)  # Switch player
         return ret_mem
@@ -74,15 +78,36 @@ class AlphaZero:
         for i in range(self.args["num_iterations"]):
             mem = []  # Memory for self-play data
             self.model.eval()  # Set model to evaluation mode
+
+            print(f"Model {i+1}\n")
+
+            # Prepare arguments for worker processes running self-play
+            sp_args = {
+                "model_dict": self.model.state_dict(),
+                "optimizer_dict": self.optimizer.state_dict(),
+                "game": self.game,
+                "args": self.args
+            }
+
+            # Use multiprocessing to perform self-play in parallel
             with torch.no_grad():
-                for _ in tqdm(range(self.args["num_self_play"] // self.args["num_parallel_games"])):
-                    mem.extend(self.self_play())  # Generate self-play data
+                with multiprocessing.Pool(processes=self.args["num_workers"]) as pool:
+                    num_batches = self.args["num_self_play"] // self.args["num_parallel_games"] # Number of batches to process
+                    results = []
+                    with tqdm(total=num_batches, desc="Self-play") as pbar:
+                        for batch in pool.imap_unordered(self_play_worker, [sp_args for _ in range(num_batches)]):
+                            # Process self-play results
+                            results.append(batch)
+                            pbar.update(1)
+                    mem = [item for sublist in results for item in sublist]
 
             self.model.train()  # Set model to training mode
             epoch_losses = []
-            for _ in tqdm(range(self.args["num_epochs"])):
+            for _ in tqdm(range(self.args["num_epochs"]), desc="Training"):
                 avg_loss = self.train(mem)  # Train on self-play data
                 epoch_losses.append(avg_loss)
+
+            print(f"Current Loss: {avg_loss}\n")
 
             # Save model and training losses
             self.save_model(i)
@@ -136,6 +161,24 @@ class AlphaZero:
         loss_file = os.path.join("./models", f"{self.game}", f"loss_{iteration}.txt")
         with open(loss_file, "w") as f:
             f.writelines(f"{loss}\n" for loss in epoch_losses)
+
+
+# Worker function for parallel self-play
+def self_play_worker(args):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Create AlphaZero instance and perform self-play
+        model = ResNet(args["game"], args["args"]["res_blocks"], args["args"]["channels"], device)
+        model.load_state_dict(args["model_dict"])
+        model.eval()
+        optimizer = torch.optim.Adam(model.parameters(), lr=args["args"]["lr"], weight_decay=args["args"]["weight_decay"])
+        optimizer.load_state_dict(args["optimizer_dict"])
+        game = args["game"].__class__()  # Create a new object of the same type as args["game"]
+        az = AlphaZero(model, optimizer, game, args["args"])
+
+        # Call self_play() and return the result
+        result = az.self_play()  # Ensure result is on CPU
+        torch.cuda.empty_cache()  # Clear GPU memory
+        return result
 
 class SPG:
     def __init__(self, game):
