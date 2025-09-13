@@ -21,10 +21,10 @@ class ModelTrainer:
 
         model = model if model else ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize the neural network model
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)  # Adam optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"], weight_decay=args["weight_decay"])  # Adam optimizer
 
         alpha_zero = AlphaZero(model, optimizer, game, args)
         alpha_zero.learn()
 
-
-ModelTrainer()  # Start training the model
+if __name__ == "__main__":
+    ModelTrainer()  # Start training the model
