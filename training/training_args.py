@@ -5,7 +5,7 @@ class TrainingArgsBuilder:
             "c": 2,
             "num_iterations": 5,
             "num_self_play": 500,
-            "num_parallel_games": 128,
+            "num_parallel_games": 100,
             "num_epochs": 4,
             "batch_size": 64,
             "temperature": 1.2,
@@ -13,7 +13,7 @@ class TrainingArgsBuilder:
             "alpha": 0.3,
             "res_blocks": 4,
             "channels": 64,
-            "num_workers": 4,
+            "num_workers": 5,
             "lr": 0.001,
             "weight_decay": 1e-4
         }
