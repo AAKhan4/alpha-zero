@@ -1,5 +1,5 @@
 import numpy as np
-from base_game import BaseGame  # Assuming BaseGame is in a file named base_game.py
+from games.base_game import BaseGame  # Assuming BaseGame is in a file named base_game.py
 
 class TicTacToe(BaseGame):
     def __init__(self):
