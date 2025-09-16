@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from core.mcts.res_net import ResNet
-from core.mcts.mcts import MCTS
 from games.game_select import GameSelection
 
 # Initialize the game
@@ -20,9 +19,7 @@ model = ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize
 model.load_state_dict(torch.load(f"./models/{game}/model_{args['num_iterations'] - 1}.pth", map_location=device))  # Load the trained model
 model.eval()  # Set model to evaluation mode
 
-monte_carlo = MCTS(game, args, model)  # Initialize MCTS
-
-while 1:
+while True:
     print(state)  # Display the current game state
 
     if player == 1:
@@ -36,10 +33,16 @@ while 1:
             print("Invalid action. Try again.")
             continue
     else:
-        # Player 2's turn (AI using MCTS)
-        print("\nPlayer 2's turn (O)")
-        mcts_probs = monte_carlo.search(state)
-        action = np.argmax(mcts_probs)  # Choose the best move
+        policy, val = model(
+                    torch.tensor(game.get_encoded_state(state), device=model.device).unsqueeze(0)
+                )
+
+        policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
+        valid_actions = game.get_valid_actions(state).astype(bool)
+        policy *= valid_actions
+        policy /= np.sum(policy) if np.sum(policy) > 0 else 1
+
+        action = np.argmax(policy)  # Choose the best move based on policy
 
     # Update the game state based on the chosen action
     state = game.get_next_state(state, action, player)
