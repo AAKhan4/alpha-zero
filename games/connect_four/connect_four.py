@@ -1,7 +1,9 @@
 import numpy as np
+from base_game import BaseGame  # Assuming BaseGame is in a file named base_game.py
 
-class ConnectFour:
+class ConnectFour(BaseGame):
     def __init__(self):
+        super().__init__()
         # Initialize board dimensions and action space size
         self.row_count = 6
         self.col_count = 7
@@ -65,32 +67,3 @@ class ConnectFour:
             count_direction(1, 1) + count_direction(-1, -1) + 1 >= self.win_length or  # Main diagonal
             count_direction(1, -1) + count_direction(-1, 1) + 1 >= self.win_length  # Anti-diagonal
         )
-
-    def is_terminal(self, state, action):
-        # Determine if the game is over (win, draw, or ongoing)
-        if self.check_win(state, action):
-            return 1, True  # Win
-        elif np.all(state != 0):
-            return 0, True  # Draw
-        return -1, False  # Game ongoing
-
-    def get_opponent(self, player):
-        # Get opponent's player value
-        return -player
-    
-    def get_opponent_val(self, val):
-        # Get opponent's perspective value
-        return -val
-    
-    def change_perspective(self, state, player):
-        # Adjust board perspective based on the current player
-        return state * player
-    
-    def get_encoded_state(self, state):
-        encoded = np.stack(
-            (state == -1, state == 0, state == 1)
-        ).astype(np.float32)
-
-        if len(state.shape) == 3:
-            encoded = np.swapaxes(encoded, 0, 1) # (batch, channels, rows, cols)
-        return encoded
