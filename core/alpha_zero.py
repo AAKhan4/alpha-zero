@@ -30,7 +30,7 @@ class AlphaZero:
             # Collect states and perform MCTS for all games
             states = np.stack([spg.state for spg in games])
             neutral_states = self.game.change_perspective(states, player)
-            self.mcts.parallel_search(neutral_states, games)
+            self.mcts.search(neutral_states, games)
 
             for i in range(len(games) - 1, -1, -1):
                 spg = games[i]
