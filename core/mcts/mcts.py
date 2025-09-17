@@ -80,3 +80,6 @@ class MCTS:
             for i, node in enumerate(expandable_nodes):
                 node.expand(policy[i])  # Expand the node with the new policy
                 node.backpropagate(val[i])  # Backpropagate the value
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Clear GPU memory
