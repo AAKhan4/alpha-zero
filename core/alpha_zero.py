@@ -1,3 +1,4 @@
+import math
 import os
 import random
 import numpy as np
@@ -39,7 +40,7 @@ class AlphaZero:
                 mcts_probs = self.calc_mcts_probs(spg)  # Compute MCTS probabilities
                 spg.mem.append((spg.root.state, mcts_probs, player))
 
-                action = self.sample_action(mcts_probs)  # Sample action based on MCTS probabilities
+                action = self.sample_action(mcts_probs, spg.state)  # Sample action based on MCTS probabilities
                 spg.state = self.game.get_next_state(spg.state, action, player)
                 val, terminal = self.game.is_terminal(spg.state, action)
 
@@ -92,12 +93,24 @@ class AlphaZero:
             }
 
             # Use multiprocessing to perform self-play in parallel
+            num_batches = max(self.args["num_workers"], math.ceil(self.args["num_self_play"] / self.args["max_parallel_games"]))
+            games_per_batch = self.args["num_self_play"] // num_batches
+            extra_games = self.args["num_self_play"] % num_batches
+
+            batch_args = []
+            for b in range(num_batches):
+                batch_size = games_per_batch + (1 if b < extra_games else 0)
+                if batch_size > 0:
+                    sp_args_batch = sp_args.copy()
+                    sp_args_batch["args"] = sp_args["args"].copy()
+                    sp_args_batch["args"]["num_parallel_games"] = min(batch_size, self.args["max_parallel_games"])
+                    batch_args.append(sp_args_batch)
+
             with torch.no_grad():
                 with multiprocessing.Pool(processes=self.args["num_workers"]) as pool:
-                    num_batches = self.args["num_self_play"] // self.args["num_parallel_games"] # Number of batches to process
                     results = []
-                    with tqdm(total=num_batches, desc="Self-play") as pbar:
-                        for batch in pool.imap_unordered(self_play_worker, [sp_args for _ in range(num_batches)]):
+                    with tqdm(total=len(batch_args), desc="Self-play") as pbar:
+                        for batch in pool.imap_unordered(self_play_worker, batch_args):
                             # Process self-play results
                             results.append(batch)
                             pbar.update(1)
@@ -115,6 +128,9 @@ class AlphaZero:
             self.save_model(i)
             self.save_losses(i, epoch_losses)
 
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Clear GPU memory
+
     def calc_mcts_probs(self, spg: SPG) -> np.ndarray:
         # Compute MCTS probabilities for actions
         mcts_probs = np.zeros(self.game.action_size)
@@ -122,9 +138,15 @@ class AlphaZero:
             mcts_probs[child.action] = child.visit_count
         return mcts_probs / np.sum(mcts_probs)
 
-    def sample_action(self, mcts_probs: np.ndarray) -> int:
+    def sample_action(self, mcts_probs: np.ndarray, state: np.ndarray) -> int:
+        temp = self.args["init_temperature"]
+        if temp > 0.1:
+            num_moves = np.sum(state != 0)
+            temp = temp - self.args["temp_decay"] * (num_moves // self.args["temp_threshold"])
+        temp = max(temp, 0.1)  # Ensure temperature doesn't go below 0.1
+
         # Sample an action based on MCTS probabilities and temperature
-        action_probs = mcts_probs ** (1 / self.args["temperature"])
+        action_probs = mcts_probs ** (1 / temp)
         action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
         return np.random.choice(self.game.action_size, p=action_probs)
 
@@ -179,5 +201,6 @@ def self_play_worker(args: dict) -> List[Tuple[np.ndarray, np.ndarray, float]]:
 
         # Call self_play() and return the result
         result = az.self_play()  # Ensure result is on CPU
-        torch.cuda.empty_cache()  # Clear GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # Clear GPU memory
         return result
