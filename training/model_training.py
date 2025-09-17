@@ -1,4 +1,5 @@
 import multiprocessing
+from time import time
 import torch
 
 from core.alpha_zero import AlphaZero
@@ -15,7 +16,16 @@ class ModelTrainer:
         args = args if args else GameSelection().get_args(game)
 
         print(f"\nTraining on {game} with args: {args}\n")
+
+        start_time = time()
         self.run(game, args)
+        end_time = time()
+
+        time_taken = end_time - start_time
+
+        hours, rem = divmod(time_taken, 3600)
+        minutes, seconds = divmod(rem, 60)
+        print(f"\nTraining completed in {int(hours)}h:{int(minutes)}m:{int(seconds)}s")
 
     def run(self, game: BaseGame, args: dict, model=None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
