@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from core.mcts.res_net import ResNet
 from games.game_select import GameSelection
+import os
 
 # Initialize the game
 game = GameSelection().pick_game()
@@ -16,7 +17,19 @@ state = game.get_initial_state()  # Get the initial game state
 
 model = ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize the neural network model
 
-model.load_state_dict(torch.load(f"./models/{game}/model_{args['num_iterations'] - 1}.pth", map_location=device))  # Load the trained model
+min_loss = float('inf')
+best_iteration = -1
+for i in range(args["num_iterations"]):
+    with open(f"./models/{game}/loss_{i}.txt", "r") as file:
+        losses = file.readlines()
+        loss = float(losses[-1].strip()) if losses else float('inf')
+
+    if loss < min_loss:
+        min_loss = loss
+        best_iteration = i
+
+print(f"\nLoading model from iteration {best_iteration} with loss {min_loss}\n")
+model.load_state_dict(torch.load(f"./models/{game}/model_{best_iteration}.pth", map_location=device))  # Load the trained model
 model.eval()  # Set model to evaluation mode
 
 while True:
