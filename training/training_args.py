@@ -1,5 +1,8 @@
+from games.base_game import BaseGame
+
+
 class TrainingArgsBuilder:
-    def __init__(self, game):
+    def __init__(self, game: BaseGame):
         self.args = {
             "num_searches": 90,
             "c": 2,
@@ -19,7 +22,7 @@ class TrainingArgsBuilder:
         }
         self.build_args(game)
 
-    def build_args(self, game):
+    def build_args(self, game: BaseGame) -> dict:
         if game.__class__.__name__ == "ConnectFour":
             self.args.update({
                 "num_searches": 600,

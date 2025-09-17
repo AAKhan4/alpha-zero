@@ -1,18 +1,28 @@
 import os
 import random
 import numpy as np
-from core.mcts.mcts import MCTS
+from core.mcts.mcts import MCTS, Node
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from typing import List, Dict, Tuple
+from games.base_game import BaseGame
 import multiprocessing
 
 from core.mcts.res_net import ResNet
 
 
+class SPG:
+    def __init__(self, game: BaseGame):
+        # Initialize a self-play game instance
+        self.state = game.get_initial_state()  # Initial game state
+        self.mem = []  # Memory for storing game history
+        self.root: Node = None  # MCTS root node
+        self.node: Node = None  # Current MCTS node
+
+
 class AlphaZero:
-    def __init__(self, model, optimizer, game, args: Dict):
+    def __init__(self, model: ResNet, optimizer: torch.optim.Optimizer, game: BaseGame, args: Dict):
         # Initialize AlphaZero with model, optimizer, game, and configuration arguments
         self.model = model
         self.optimizer = optimizer
@@ -113,7 +123,7 @@ class AlphaZero:
             self.save_model(i)
             self.save_losses(i, epoch_losses)
 
-    def calc_mcts_probs(self, spg) -> np.ndarray:
+    def calc_mcts_probs(self, spg: SPG) -> np.ndarray:
         # Compute MCTS probabilities for actions
         mcts_probs = np.zeros(self.game.action_size)
         for child in spg.root.children:
@@ -126,7 +136,7 @@ class AlphaZero:
         action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
         return np.random.choice(self.game.action_size, p=action_probs)
 
-    def backpropagate(self, spg, val: float, player: int, ret_mem: List):
+    def backpropagate(self, spg: SPG, val: float, player: int, ret_mem: List) -> None:
         # Backpropagate game results to update memory
         for hist_state, hist_probs, hist_player in spg.mem:
             hist_outcome = val if hist_player == player else self.game.get_opponent_val(val)
@@ -136,27 +146,27 @@ class AlphaZero:
                 hist_outcome
             ))
 
-    def prepare_batch(self, state, pol_targets, val_targets):
+    def prepare_batch(self, state: np.ndarray, pol_targets: np.ndarray, val_targets: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Prepare batch data for training
         state = torch.tensor(np.array(state), dtype=torch.float32, device=self.model.device)
         pol_targets = torch.tensor(np.array(pol_targets), dtype=torch.float32, device=self.model.device)
         val_targets = torch.tensor(np.array(val_targets).reshape(-1, 1), dtype=torch.float32, device=self.model.device)
         return state, pol_targets, val_targets
 
-    def calc_loss(self, out_pol, pol_targets, out_val, val_targets):
+    def calc_loss(self, out_pol: torch.Tensor, pol_targets: torch.Tensor, out_val: torch.Tensor, val_targets: torch.Tensor) -> torch.Tensor:
         # Compute combined policy and value loss
         policy_loss = F.kl_div(torch.log_softmax(out_pol, dim=1), pol_targets, reduction="batchmean")
         value_loss = F.mse_loss(out_val, val_targets)
-        return policy_loss + value_loss
+        return (policy_loss + value_loss)
 
-    def save_model(self, iteration: int):
+    def save_model(self, iteration: int) -> None:
         # Save model and optimizer state to disk
         model_dir = os.path.join("./models", f"{self.game}")
         os.makedirs(model_dir, exist_ok=True)
         torch.save(self.model.state_dict(), os.path.join(model_dir, f"model_{iteration}.pth"))
         torch.save(self.optimizer.state_dict(), os.path.join(model_dir, f"optimizer_{iteration}.pth"))
 
-    def save_losses(self, iteration: int, epoch_losses: List[float]):
+    def save_losses(self, iteration: int, epoch_losses: List[float]) -> None:
         # Save training losses to a file
         loss_file = os.path.join("./models", f"{self.game}", f"loss_{iteration}.txt")
         with open(loss_file, "w") as f:
@@ -164,7 +174,7 @@ class AlphaZero:
 
 
 # Worker function for parallel self-play
-def self_play_worker(args):
+def self_play_worker(args: dict) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # Create AlphaZero instance and perform self-play
         model = ResNet(args["game"], args["args"]["res_blocks"], args["args"]["channels"], device)
@@ -179,10 +189,3 @@ def self_play_worker(args):
         result = az.self_play()  # Ensure result is on CPU
         torch.cuda.empty_cache()  # Clear GPU memory
         return result
-
-class SPG:
-    def __init__(self, game):
-        # Initialize a self-play game instance
-        self.state = game.get_initial_state()  # Initial game state
-        self.mem = []  # Memory for storing game history
-        self.root, self.node = None, None  # MCTS root and current node

@@ -1,8 +1,11 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from games.base_game import BaseGame
+
 class ResBlock(nn.Module):
-    def __init__(self, num_channels):
+    def __init__(self, num_channels: int):
         super().__init__()
 
         self.conv1 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
@@ -10,7 +13,7 @@ class ResBlock(nn.Module):
         self.conv2 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(num_channels)
     
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         residual = x
         x = F.relu(self.bn1(self.conv1(x)))
         x = self.bn2(self.conv2(x))
@@ -18,7 +21,7 @@ class ResBlock(nn.Module):
         return F.relu(x)
 
 class ResNet(nn.Module):
-    def __init__(self, game, num_resBlocks, num_channels, device):
+    def __init__(self, game: BaseGame, num_resBlocks: int, num_channels: int, device: torch.device):
         super().__init__()
         self.device = device
 
@@ -51,7 +54,7 @@ class ResNet(nn.Module):
 
         self.to(device)
 
-    def forward(self, x):
+    def forward(self, x) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.startBlock(x)
         for block in self.backBone:
             x = block(x)
