@@ -1,24 +1,16 @@
 import os
 import random
 import numpy as np
-from core.mcts.mcts import MCTS, Node
+from core.mcts.mcts import MCTS
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from typing import List, Dict, Tuple
+from core.spg import SPG
 from games.base_game import BaseGame
 import multiprocessing
 
 from core.mcts.res_net import ResNet
-
-
-class SPG:
-    def __init__(self, game: BaseGame):
-        # Initialize a self-play game instance
-        self.state = game.get_initial_state()  # Initial game state
-        self.mem = []  # Memory for storing game history
-        self.root: Node = None  # MCTS root node
-        self.node: Node = None  # Current MCTS node
 
 
 class AlphaZero:
