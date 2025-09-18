@@ -28,12 +28,13 @@ for i in range(args["num_iterations"]):
         min_loss = loss
         best_iteration = i
 
-print(f"\nLoading model from iteration {best_iteration} with loss {min_loss}\n")
+print(f"\nLoading model {best_iteration + 1} with loss {min_loss}\n")
 model.load_state_dict(torch.load(f"./models/{game}/model_{best_iteration}.pth", map_location=device))  # Load the trained model
 model.eval()  # Set model to evaluation mode
 
 while True:
-    print(state)  # Display the current game state
+    print_state = np.where(state == 1, "| X |", np.where(state == -1, "| O |", "|   |"))
+    print(print_state)  # Display the current game state
 
     if player == 1:
         # Player 1's turn (human input)
@@ -42,7 +43,7 @@ while True:
         print([i for i in range(len(valid_actions)) if valid_actions[i] == 1])  # Show valid actions
         action = int(input(f"Player {player}, enter your action (0-8): "))
 
-        if valid_actions[action] == 0:  # Check for invalid moves
+        if not game.is_valid_action(state, action):
             print("Invalid action. Try again.")
             continue
     else:
@@ -51,18 +52,21 @@ while True:
                 )
 
         policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
-        valid_actions = game.get_valid_actions(state).astype(bool)
+        valid_actions = game.get_valid_actions(state)
         policy *= valid_actions
         policy /= np.sum(policy) if np.sum(policy) > 0 else 1
 
         action = np.argmax(policy)  # Choose the best move based on policy
+        print(f"\nPlayer {player}'s turn (O)\n")
+        print(f"AI chose action: {action}\n")
 
     # Update the game state based on the chosen action
     state = game.get_next_state(state, action, player)
     val, terminal = game.is_terminal(state, action)  # Check if the game is over
 
     if terminal:
-        print(state)  # Display the final state
+        print_state = np.where(state == 1, "| X |", np.where(state == -1, "| O |", "|   |"))
+        print(print_state)  # Display the final state
         if val == 1:
             print(f"Player {player} wins!")  # Declare winner
         elif val == 0:
