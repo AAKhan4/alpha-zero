@@ -28,6 +28,9 @@ class TicTacToe(BaseGame):
         # Return valid actions (empty cells) as a binary mask
         return (state.reshape(-1) == 0).astype(np.uint8)
     
+    def is_valid_action(self, state, action):
+        return self.get_valid_actions(state)[action] == 1
+    
     def check_win(self, state, action):
         # Check if the last action resulted in a win
         if action is None:

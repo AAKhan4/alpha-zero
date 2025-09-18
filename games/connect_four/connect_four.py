@@ -21,10 +21,8 @@ class ConnectFour(BaseGame):
         # Convert flat action to column
         col = action % self.col_count
         # Find the lowest empty row in the selected column
-        empty_rows = np.where(state[:, col] == 0)[0]
-        if empty_rows.size > 0:
-            row = empty_rows[-1]
-            state[row, col] = player
+        row = np.max(np.where(state[:, col] == 0)[0])
+        state[row, col] = player
         return state
 
     def get_valid_actions(self, state):
@@ -36,13 +34,20 @@ class ConnectFour(BaseGame):
             mask[row * self.col_count + col] = 1
         return mask
     
+    def is_valid_action(self, state, action):
+        valid_actions = self.get_valid_actions(state)
+        for i in range(self.row_count):
+            if valid_actions[i * self.col_count + (action % self.col_count)] == 1:
+                return True
+        return False
+    
     def check_win(self, state, action):
         # Check if the last action resulted in a win
         if action is None:
             return False
 
         col = action % self.col_count
-        row = np.max(np.where(state[:, col] != 0))
+        row = np.min(np.where(state[:, col] != 0)[0])
         player = state[row, col]
 
         def count_direction(delta_row, delta_col):
@@ -65,5 +70,5 @@ class ConnectFour(BaseGame):
             count_direction(1, 0) + count_direction(-1, 0) + 1 >= self.win_length or  # Vertical
             count_direction(0, 1) + count_direction(0, -1) + 1 >= self.win_length or  # Horizontal
             count_direction(1, 1) + count_direction(-1, -1) + 1 >= self.win_length or  # Main diagonal
-            count_direction(1, -1) + count_direction(-1, 1) + 1 >= self.win_length  # Anti-diagonal
+            count_direction(-1, 1) + count_direction(1, -1) + 1 >= self.win_length  # Anti-diagonal
         )
