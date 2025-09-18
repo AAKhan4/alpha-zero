@@ -19,6 +19,9 @@ class BaseGame:
 
     def get_valid_actions(self, state: np.ndarray) -> list[int]:
         raise NotImplementedError
+    
+    def is_valid_action(self, state: np.ndarray, action: int) -> bool:
+        raise NotImplementedError
 
     def check_win(self, state: np.ndarray, action: int) -> bool:
         raise NotImplementedError
