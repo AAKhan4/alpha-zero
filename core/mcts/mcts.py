@@ -42,7 +42,6 @@ class MCTS:
         for _ in range(self.args["num_searches"]):
             expandable_nodes: list[Node] = []
             for game in games:
-                game.node = None  # Reset the expandable node
                 node = game.root  # Start from the root node
 
                 # Selection: Traverse the tree to find a node to expand
@@ -54,7 +53,6 @@ class MCTS:
 
                 if terminal:
                     # If terminal, backpropagate the result
-                    val = self.game.get_opponent_val(val)  # Flip value for the opponent's perspective
                     node.backpropagate(val)
                 else:
                     expandable_nodes.append(node)
