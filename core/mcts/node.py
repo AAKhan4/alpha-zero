@@ -27,7 +27,7 @@ class Node:
     # Calculates the UCB score for a given child node
     def get_ucb(self, child: 'Node') -> float:
         # Q-value: normalized value of the node (scaled to [-1, 1])
-        q = (1 - ((child.value_sum / child.visit_count) + 1) / 2) if child.visit_count > 0 else 0
+        q = (child.value_sum / child.visit_count) if child.visit_count > 0 else 0
         # UCB formula: Q + exploration term
         return q + self.args['c'] * (np.sqrt(self.visit_count) / (child.visit_count + 1)) * child.prior
 
