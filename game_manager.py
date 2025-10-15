@@ -17,19 +17,14 @@ state = game.get_initial_state()  # Get the initial game state
 
 model = ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize the neural network model
 
-min_loss = float('inf')
-best_iteration = -1
-for i in range(args["num_iterations"]):
-    with open(f"./models/{game}/loss_{i}.txt", "r") as file:
-        losses = file.readlines()
-        loss = float(losses[-1].strip()) if losses else float('inf')
+loss = float('inf')
 
-    if loss < min_loss:
-        min_loss = loss
-        best_iteration = i
+with open(f"./models/{game}/loss_{args['num_iterations']-1}.txt", "r") as file:
+    losses = file.readlines()
+    loss = float(losses[-1].strip()) if losses else float('inf')
 
-print(f"\nLoading model {best_iteration + 1} with loss {min_loss}\n")
-model.load_state_dict(torch.load(f"./models/{game}/model_{best_iteration}.pth", map_location=device))  # Load the trained model
+print(f"\nLoading model {args['num_iterations']} with loss {loss}\n")
+model.load_state_dict(torch.load(f"./models/{game}/model_{args['num_iterations']-1}.pth", map_location=device))  # Load the trained model
 model.eval()  # Set model to evaluation mode
 
 while True:
@@ -54,9 +49,10 @@ while True:
         policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
         valid_actions = game.get_valid_actions(state)
         policy *= valid_actions
+        policy = policy ** 5  # Boost probabilities to favor higher ones
         policy /= np.sum(policy) if np.sum(policy) > 0 else 1
 
-        action = np.argmax(policy)  # Choose the best move based on policy
+        action = np.random.choice(len(policy), p=policy)  # Sample action based on policy
         print(f"\nPlayer {player}'s turn (O)\n")
         print(f"AI chose action: {action}\n")
 
