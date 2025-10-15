@@ -19,8 +19,7 @@ class TicTacToe(BaseGame):
     def get_next_state(self, state, action, player):
         # Apply action to the board and return the updated state
         next_state = state.copy()
-        row = action // self.col_count
-        col = action % self.col_count
+        row, col = divmod(action, self.col_count)
         next_state[row, col] = player
         return next_state
 
