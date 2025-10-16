@@ -1,0 +1,46 @@
+from games.base_game import BaseGame
+
+
+class TrainingArgsBuilder:
+    def __init__(self, game: BaseGame):
+        self.args = {
+            "num_searches": 100, # Number of MCTS simulations per move
+            "c": 1.0, # Exploration constant for MCTS
+            "num_iterations": 10, # Number of training iterations
+            "num_self_play": 200, # Number of self-play games per iteration
+            "max_parallel_games": 128, # Max parallel games during self-play
+            "num_epochs": 8, # Training epochs per iteration
+            "batch_size": 64, # Mini-batch size for training
+            "init_temperature": 1.1, # Initial temperature for action selection
+            "temp_threshold": 6, # Moves before temperature decay
+            "temp_decay": 0.3, # Temperature decay rate
+            "epsilon": 0.25, # Exploration noise weight
+            "alpha": 0.3, # Dirichlet noise parameter
+            "res_blocks": 4, # Number of residual blocks in the neural network
+            "channels": 64, # Number of channels in the neural network
+            "num_workers": 5, # Number of parallel worker processes
+            "lr": 0.001, # Learning rate for the optimizer
+            "weight_decay": 1e-4 # Weight decay for the optimizer
+        }
+        self.build_args(game)
+
+    def build_args(self, game: BaseGame) -> dict:
+        if game.__class__.__name__ == "ConnectFour":
+            self.args.update({
+                "num_searches": 400,
+                "num_self_play": 600,
+                "c": 1.8,
+                "num_iterations": 12,
+                "num_epochs": 15,
+                "batch_size": 128,
+                "temp_threshold": 10,
+                "temp_decay": 0.3,
+                "res_blocks": 8,
+                "channels": 128,
+                "lr": 0.0005
+            })
+        elif game.__class__.__name__ == "TicTacToe":
+            pass  # Use default args
+        else:
+            raise ValueError("Unsupported game type")
+        return self.args
