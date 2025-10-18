@@ -17,7 +17,7 @@ class BaseGame:
     def get_next_state(self, game_info: dict, action: int) -> dict:
         raise NotImplementedError
 
-    def get_valid_actions(self, game_info: dict) -> list[int]:
+    def get_valid_actions(self, game_info: dict) -> np.ndarray:
         raise NotImplementedError
 
     def is_valid_action(self, game_info: dict, action: int) -> bool:
