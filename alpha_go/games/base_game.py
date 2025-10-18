@@ -26,15 +26,15 @@ class BaseGame:
     def check_win(self, game_info: dict) -> bool | None:
         raise NotImplementedError
 
+    def change_perspective(self, game_info: dict) -> dict:
+        raise NotImplementedError
+
     def is_terminal(self, game_info: dict) -> tuple[int, bool]:
         # Determine if the game is over (win, draw, or ongoing)
         score = self.check_win(game_info)
         if not score:
             return 0, False  # Game ongoing
         return score, True  # Game over
-
-    def change_perspective(self, game_info: dict) -> dict:
-        raise NotImplementedError
 
     def get_opponent(self, player: int) -> int:
         # Get opponent's player value
@@ -56,8 +56,8 @@ class BaseGame:
 class GameState:
     def __init__(self, game: BaseGame, player: int = 1):
         self.game = game
-        self.board = game.get_initial_state()
-        self.player = player
+        self.board: np.ndarray = game.get_initial_state()
+        self.player: int = player
 
     def get_info(self) -> dict:
         return {
