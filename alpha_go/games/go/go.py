@@ -249,9 +249,9 @@ class Go(BaseGame):
     def change_perspective(self, game_state: dict) -> dict:
         # Adjust board perspective based on the current player
         game_info = game_state.copy()
-        game_info["last_2_boards"] = game_info["last_2_boards"].copy()
-        game_info["last_2_actions"] = game_info["last_2_actions"].copy()
-        game_info["board"] = -1 * game_info["board"].copy()
+        game_info["last_2_boards"] = game_info["last_2_boards"]
+        game_info["last_2_actions"] = game_info["last_2_actions"]
+        game_info["board"] = -1 * game_info["board"]
         game_info["player"] *= -1
         game_info["captures"] *= -1
         return game_info
@@ -266,7 +266,7 @@ class GoState(GameState):
     
     def get_info(self):
         return {
-            "board": self.board,
+            "board": self.board.copy(),
             "player": self.player,
             "last_2_actions": self.last_2_actions.copy(),
             "last_2_boards": self.last_2_boards.copy(),
