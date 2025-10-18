@@ -4,20 +4,21 @@ import torch
 from core.mcts.node import Node
 from core.spg import SPG
 from core.mcts.res_net import ResNet
-from games.base_game import BaseGame
+from games.go import Go
 
 
 # Implements the Monte Carlo Tree Search (MCTS) algorithm
 class MCTS:
-    def __init__(self, game: BaseGame, args: dict, model: ResNet):
+    def __init__(self, game: Go, args: dict, model: ResNet):
         self.game = game  # Game logic object
         self.args = args  # MCTS parameters (e.g., exploration constant, number of searches)
         self.model = model  # Neural network model for policy and value predictions
 
     # Performs MCTS for multiple self-play games in parallel
     @torch.no_grad()
-    def search(self, states: np.ndarray, games: list[SPG]) -> None:
+    def search(self, games: list[SPG]) -> None:
         # Get initial policy and value predictions from the model
+        states = np.stack([game.game_state.state for game in games])
         policy, _ = self.model(
             torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
         )
@@ -29,13 +30,14 @@ class MCTS:
         )
 
         # Mask invalid actions and normalize probabilities for all states
-        valid_actions = np.stack([self.game.get_valid_actions(state) for state in states])  # Batch valid actions
+        valid_actions = np.stack([self.game.get_valid_actions(game.game_state.get_info()) for game in games])  # Batch valid actions
         policy *= valid_actions  # Mask invalid actions for all states
         policy /= np.sum(policy, axis=1, keepdims=True)  # Normalize probabilities across actions
 
         # Initialize root nodes for all parallel games
         for i, game in enumerate(games):
-            game.root = Node(self.game, self.args, states[i], visit_count=0)
+            game_info = game.game_state.get_info()
+            game.root = Node(self.game, self.args, game_info, visit_count=0)
             game.root.expand(policy[i])
 
         # Perform the specified number of MCTS searches
@@ -49,7 +51,8 @@ class MCTS:
                     node = node.select()  # Select the best child node
 
                 # Check if the selected node is terminal
-                val, terminal = self.game.is_terminal(node.state, node.action)
+                val, terminal = self.game.is_terminal(node.info)
+                val /= abs(val) if val != 0 else 1  # Normalize terminal value to [-1, 1]
 
                 if terminal:
                     # If terminal, backpropagate the result
@@ -60,7 +63,7 @@ class MCTS:
             # Collect all nodes that can be expanded
             if expandable_nodes:
                 # Get states for all expandable nodes
-                states = np.stack([node.state for node in expandable_nodes])
+                states = np.stack([node.info["state"] for node in expandable_nodes])
                 # Get policy and value predictions for these states
                 policy, val = self.model(
                     torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
@@ -70,7 +73,7 @@ class MCTS:
 
 
             # Mask invalid actions and normalize probabilities for all states
-            valid_actions = np.stack([self.game.get_valid_actions(state) for state in states])  # Batch valid actions
+            valid_actions = np.stack([self.game.get_valid_actions(node.info) for node in expandable_nodes])  # Batch valid actions
             policy *= valid_actions  # Mask invalid actions for all states
             policy /= np.sum(policy, axis=1, keepdims=True)  # Normalize probabilities across actions
 
