@@ -19,6 +19,14 @@ class TicTacToe(BaseGame):
         valid_actions = self.get_valid_actions(game_info)
         return valid_actions[action] == 1
     
+    def get_next_state(self, game_info: dict, action: int) -> dict:
+        game_info = game_info.copy()
+        new_state = game_info["board"].copy()
+        row, col = divmod(action, self.col_count)
+        new_state[row, col] = 1
+        game_info["board"] = new_state
+        return game_info
+    
     def check_win(self, game_info: dict) -> int | None:
         board = game_info["board"]
         if np.any(board == 0):
