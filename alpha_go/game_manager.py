@@ -26,7 +26,7 @@ model.load_state_dict(torch.load(f"./models/{game}/model_{args['num_iterations']
 model.eval()  # Set model to evaluation mode
 
 while True:
-    print_state = np.where(game_state.state == 1, "| X |", np.where(game_state.state == -1, "| O |", "|   |"))
+    print_state = np.where(game_state.board == 1, "| X |", np.where(game_state.board == -1, "| O |", "|   |"))
     print(print_state)  # Display the current game state
     game_info = game_state.get_info()
 
@@ -58,7 +58,7 @@ while True:
 
     # Update the game state based on the chosen action
     game_info = game.get_next_state(game_info, action)
-    val, terminal = game.is_terminal(game_info["state"], game_info["last_2_actions"], game_info["perspective"], game_info["captures"])  # Check if the game is over
+    val, terminal = game.is_terminal(game_info)  # Check if the game is over
 
     if terminal:
         temp = game.change_perspective(game_info) if game_info["perspective"] == -1 else game_info
