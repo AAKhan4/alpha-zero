@@ -8,14 +8,14 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from typing import List, Dict, Tuple
 from core.spg import SPG
-from games.go import Go, GoState
+from games.base_game import BaseGame
 import multiprocessing
 
 from core.mcts.res_net import ResNet
 
 
 class AlphaZero:
-    def __init__(self, model: ResNet, optimizer: torch.optim.Optimizer, game: Go, args: Dict):
+    def __init__(self, model: ResNet, optimizer: torch.optim.Optimizer, game: BaseGame, args: Dict):
         # Initialize AlphaZero with model, optimizer, game, and configuration arguments
         self.model = model
         self.optimizer = optimizer
@@ -34,18 +34,18 @@ class AlphaZero:
 
             for i in range(len(games) - 1, -1, -1):
                 spg = games[i]
-                game_info = spg.game_state
+                game_info = spg.game_state.get_info()
                 mcts_probs = self.calc_mcts_probs(spg)  # Compute MCTS probabilities
-                spg.mem.append((spg.root.state, mcts_probs, spg.game_state.perspective))  # Store state, probs, player
+                spg.mem.append((game_info["board"], mcts_probs, game_info["player"]))  # Store state, probs, player
 
-                action = self.sample_action(mcts_probs, spg.game_state.state)  # Sample action based on MCTS probabilities
-                game_info = self.game.get_next_state(spg.game_state, action)
+                action = self.sample_action(mcts_probs, game_info["board"])  # Sample action based on MCTS probabilities
+                game_info = self.game.get_next_state(game_info, action)
                 val, terminal = self.game.is_terminal(game_info, action)
                 val /= abs(val) if val != 0 else 1  # Normalize value
 
                 if terminal:
                     # Backpropagate results and remove finished games
-                    self.backpropagate(spg, val, game_info["perspective"], ret_mem)  # CHECK IF CORRECT
+                    self.backpropagate(spg, val, game_info["player"], ret_mem)  # CHECK IF CORRECT
                     games.pop(i)
 
                 game_info = self.game.change_perspective(game_info)

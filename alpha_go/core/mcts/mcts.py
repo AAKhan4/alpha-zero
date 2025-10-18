@@ -18,7 +18,7 @@ class MCTS:
     @torch.no_grad()
     def search(self, games: list[SPG]) -> None:
         # Get initial policy and value predictions from the model
-        states = np.stack([game.game_state.state for game in games])
+        states = np.stack([game.game_state.board for game in games])
         policy, _ = self.model(
             torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
         )
@@ -63,7 +63,7 @@ class MCTS:
             # Collect all nodes that can be expanded
             if expandable_nodes:
                 # Get states for all expandable nodes
-                states = np.stack([node.info["state"] for node in expandable_nodes])
+                states = np.stack([node.info["board"] for node in expandable_nodes])
                 # Get policy and value predictions for these states
                 policy, val = self.model(
                     torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
