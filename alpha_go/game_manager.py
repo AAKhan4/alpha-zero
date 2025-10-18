@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from core.mcts.res_net import ResNet
-from games.go import Go, GoState
+from alpha_go.games.go.go import Go, GoState
 from training.training_args import TrainingArgsBuilder
 import os
 
