@@ -1,8 +1,9 @@
 import numpy as np
+from games.base_game import BaseGame, GameState
 
 # TODO: FIX CAPTURE LOGIC
 
-class Go():
+class Go(BaseGame):
     def __init__(self, board_size=9, komi=6.5):
         self.row_count = board_size
         self.col_count = board_size
@@ -108,7 +109,7 @@ class Go():
         return ko_moves
 
     def get_valid_actions(self, game_info: dict) -> np.ndarray:
-        state: np.ndarray = game_info["state"]
+        state: np.ndarray = game_info["board"]
         last_2_boards: list[np.ndarray] = game_info["last_2_boards"]
         suicide_moves = self.detect_suicide_moves(state)
         ko_moves = self.detect_ko(state, last_2_boards)
@@ -119,7 +120,7 @@ class Go():
         return valid_actions
 
     def is_valid_action(self, game_info: dict, action: int) -> bool:
-        state: np.ndarray = game_info["state"]
+        state: np.ndarray = game_info["board"]
         last_2_boards: list[np.ndarray] = game_info["last_2_boards"]
         if action == self.row_count * self.col_count:  # Pass move
             return True
@@ -138,14 +139,14 @@ class Go():
             return game_info
         row, col = divmod(action, self.col_count)
 
-        new_state = game_info["state"].copy()
+        new_state = game_info["board"].copy()
         new_state[row, col] = 1
         new_state, game_info["captures"] = self.remove_adj_dead_stones(new_state, action, game_info["captures"])
 
         game_info["last_2_boards"].append(new_state.copy())
         if len(game_info["last_2_boards"]) > 2:
             game_info["last_2_boards"].pop(0)
-        game_info["state"] = new_state
+        game_info["board"] = new_state
 
         return game_info
 
@@ -214,20 +215,12 @@ class Go():
 
         return new_state, captures
 
-    def check_win(self, state: np.ndarray, captures: int, player: int) -> int:
-        state, captures = self.remove_dead_stones_end(state, captures)
-        territory = self.calc_territory(state)
-        score = (np.sum(territory) + captures) - (self.komi * player)
-        return score
-
-    def is_terminal(self, game_info: dict) -> tuple[int | None, bool]:
-        state: np.ndarray = game_info["state"]
+    def check_win(self, game_info: dict) -> int | None:
+        state: np.ndarray = game_info["board"]
         last_2_actions: list[int] = game_info["last_2_actions"]
-        player: int = game_info["perspective"]
+        player: int = game_info["player"]
         captures: int = game_info["captures"]
 
-        if last_2_actions[-1] < 0:  # Resignation
-            return None, True
         valid_actions = self.get_valid_actions(game_info)
         if len(last_2_actions) < 2:
             return -1, False
@@ -237,56 +230,52 @@ class Go():
         if np.any(valid_actions[:-1]):  # There are valid moves other than pass
             return -1, False
 
-        final_score = self.check_win(state, captures, player)
-        return final_score, True
+        state, captures = self.remove_dead_stones_end(state, captures)
+        territory = self.calc_territory(state)
+        score = (np.sum(territory) + captures) - (self.komi * player)
+        return score
 
-    def get_opponent(self, player: int) -> int:
-        # Get opponent's player value
-        return -player
+    def is_terminal(self, game_info: dict) -> tuple[int | None, bool]:
+        last_2_actions: list[int] = game_info["last_2_actions"]
 
-    def get_opponent_val(self, val: int) -> int:
-        # Get opponent's perspective value
-        return -val
+        if last_2_actions[-1] < 0:  # Resignation
+            return None, True
+
+        score = self.check_win(game_info)
+        if not score:
+            return 0, False  # Game ongoing
+        return score, True  # Game over
 
     def change_perspective(self, game_state: dict) -> dict:
         # Adjust board perspective based on the current player
         game_info = game_state.copy()
         game_info["last_2_boards"] = game_info["last_2_boards"].copy()
         game_info["last_2_actions"] = game_info["last_2_actions"].copy()
-        game_info["state"] = -1 * game_info["state"].copy()
-        game_info["perspective"] *= -1
+        game_info["board"] = -1 * game_info["board"].copy()
+        game_info["player"] *= -1
         game_info["captures"] *= -1
         return game_info
 
-    def get_encoded_state(self, state: np.ndarray) -> np.ndarray:
-        encoded = np.stack(
-            (state == -1, state == 0, state == 1)
-        ).astype(np.float32)
 
-        if len(state.shape) == 3:
-            encoded = np.swapaxes(encoded, 0, 1)  # (batch, channels, rows, cols)
-        return encoded
-    
-class GoState:
-    def __init__(self, game: Go, last_2_actions=None, last_2_boards=None, captures=0, perspective=1):
-        self.state = game.get_initial_state()
-        self.perspective = perspective  # 1 for black, -1 for white
+class GoState(GameState):
+    def __init__(self, game: Go, last_2_actions=None, last_2_boards=None, captures=0, player=1):
+        super().__init__(game=game, player=player)
         self.last_2_actions = last_2_actions or []
         self.last_2_boards = last_2_boards or []
         self.captures = captures
     
     def get_info(self):
         return {
-            "state": self.state,
-            "perspective": self.perspective,
-            "last_2_actions": self.last_2_actions,
-            "last_2_boards": self.last_2_boards,
+            "board": self.board,
+            "player": self.player,
+            "last_2_actions": self.last_2_actions.copy(),
+            "last_2_boards": self.last_2_boards.copy(),
             "captures": self.captures
         }
     
     def update(self, game_info: dict):
-        self.state = game_info["state"]
-        self.perspective = game_info["perspective"]
+        self.board = game_info["board"]
+        self.player = game_info["player"]
         self.last_2_actions = game_info["last_2_actions"]
         self.last_2_boards = game_info["last_2_boards"]
         self.captures = game_info["captures"]
