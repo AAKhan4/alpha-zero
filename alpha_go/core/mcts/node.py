@@ -1,10 +1,10 @@
 # Represents a node in the Monte Carlo Tree Search (MCTS) tree
 import numpy as np
-from games.go import Go
+from games.base_game import BaseGame
 
 
 class Node:
-    def __init__(self, game: Go, args: dict, state: dict, parent: 'Node' = None, action: int = None, prior: float = 0, visit_count: int = 0):
+    def __init__(self, game: BaseGame, args: dict, state: dict, parent: 'Node' = None, action: int = None, prior: float = 0, visit_count: int = 0):
         self.game = game  # Game logic object
         self.args = args  # MCTS parameters (e.g., exploration constant)
         self.info = state  # Current game state at this node
