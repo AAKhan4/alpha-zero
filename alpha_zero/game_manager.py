@@ -43,7 +43,7 @@ while True:
             continue
     else:
         policy, val = model(
-                    torch.tensor(game.get_encoded_state(state), device=model.device).unsqueeze(0)
+                    torch.tensor(game.get_encoded_state(game.change_perspective(state)), device=model.device).unsqueeze(0)
                 )
 
         policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
