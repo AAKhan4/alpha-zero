@@ -4,12 +4,12 @@ import torch
 from core.mcts.node import Node
 from core.spg import SPG
 from core.mcts.res_net import ResNet
-from games.go import Go
+from alpha_go.games.base_game import BaseGame
 
 
 # Implements the Monte Carlo Tree Search (MCTS) algorithm
 class MCTS:
-    def __init__(self, game: Go, args: dict, model: ResNet):
+    def __init__(self, game: BaseGame, args: dict, model: ResNet):
         self.game = game  # Game logic object
         self.args = args  # MCTS parameters (e.g., exploration constant, number of searches)
         self.model = model  # Neural network model for policy and value predictions
