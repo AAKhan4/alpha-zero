@@ -7,7 +7,7 @@ class Go():
         self.row_count = board_size
         self.col_count = board_size
         self.action_size = board_size * board_size + 1  # +1 for the pass move
-        self.komi = -1 * komi
+        self.komi = komi
 
     def __repr__(self):
         return "Go"
@@ -128,6 +128,8 @@ class Go():
 
     def get_next_state(self, game_state: dict, action: int) -> dict:
         game_info = game_state.copy()
+        game_info["last_2_boards"] = game_info["last_2_boards"].copy()
+        game_info["last_2_actions"] = game_info["last_2_actions"].copy()
         game_info["last_2_actions"].append(action)
         if len(game_info["last_2_actions"]) > 2:
             game_info["last_2_actions"].pop(0)
@@ -215,7 +217,7 @@ class Go():
     def check_win(self, state: np.ndarray, captures: int, player: int) -> int:
         state, captures = self.remove_dead_stones_end(state, captures)
         territory = self.calc_territory(state)
-        score = (np.sum(territory) + captures) + (self.komi * player)
+        score = (np.sum(territory) + captures) - (self.komi * player)
         return score
 
     def is_terminal(self, game_info: dict) -> tuple[int | None, bool]:
@@ -226,10 +228,13 @@ class Go():
 
         if last_2_actions[-1] < 0:  # Resignation
             return None, True
+        valid_actions = self.get_valid_actions(game_info)
         if len(last_2_actions) < 2:
             return -1, False
         if last_2_actions[-1] != self.row_count * self.col_count and \
            last_2_actions[-2] != self.row_count * self.col_count:
+            return -1, False
+        if np.any(valid_actions[:-1]):  # There are valid moves other than pass
             return -1, False
 
         final_score = self.check_win(state, captures, player)
@@ -246,7 +251,9 @@ class Go():
     def change_perspective(self, game_state: dict) -> dict:
         # Adjust board perspective based on the current player
         game_info = game_state.copy()
-        game_info["state"] *= -1
+        game_info["last_2_boards"] = game_info["last_2_boards"].copy()
+        game_info["last_2_actions"] = game_info["last_2_actions"].copy()
+        game_info["state"] = -1 * game_info["state"].copy()
         game_info["perspective"] *= -1
         game_info["captures"] *= -1
         return game_info

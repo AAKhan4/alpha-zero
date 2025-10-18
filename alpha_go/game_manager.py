@@ -61,17 +61,15 @@ while True:
     val, terminal = game.is_terminal(game_info["state"], game_info["last_2_actions"], game_info["perspective"], game_info["captures"])  # Check if the game is over
 
     if terminal:
-        if game_info["perspective"] == -1:
-            game_info = game.change_perspective(game_info)
-            val = -val
-        print_state = np.where(game_info["state"] == 1, "| X |", np.where(game_info["state"] == -1, "| O |", "|   |"))
+        temp = game.change_perspective(game_info) if game_info["perspective"] == -1 else game_info
+        print_state = np.where(temp["state"] == 1, "| X |", np.where(temp["state"] == -1, "| O |", "|   |"))
         print(print_state)  # Display the final state
         if val == 0:
             print("It's a draw!")  # Declare draw
         elif val is None:
-            print(f"Player {game_info['perspective']} wins by resignation!")  # Declare resignation win
+            print(f"Player {temp['perspective']} wins by resignation!")  # Declare resignation win
         else:
-            print(f"Player {val/abs(val)} wins with score {abs(val)}!")  # Declare win with score
+            print(f"Player {game_info['perspective'] * val / abs(val)} wins with score {abs(val)}!")  # Declare win with score
         break
 
     # Switch to the other player
