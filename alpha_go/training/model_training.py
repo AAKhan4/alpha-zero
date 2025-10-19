@@ -5,15 +5,17 @@ import torch
 from core.alpha_zero import AlphaZero
 from core.mcts.res_net import ResNet
 from games.base_game import BaseGame
-from games.game_select import GameSelection
+from games.go.go import Go
+from training_args import TrainingArgsBuilder
 
 
 class ModelTrainer:
-    def __init__(self, game=None, args=None):
-            
-        game = game if game else GameSelection().pick_game()
+    def __init__(self, game: BaseGame = None, args=None):
 
-        args = args if args else GameSelection().get_args(game)
+        game = game if game else Go()
+
+        args_builder = TrainingArgsBuilder()
+        args = args if args else args_builder.build_args(game)
 
         print(f"\nTraining on {game} with args: {args}\n")
 

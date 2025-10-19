@@ -39,6 +39,20 @@ class TrainingArgsBuilder:
                 "channels": 128,
                 "lr": 0.0005
             })
+        elif game.__class__.__name__ == "Go":
+            self.args.update({
+                "num_searches": 800,
+                "num_self_play": 1000,
+                "c": 2.0,
+                "num_iterations": 20,
+                "num_epochs": 20,
+                "batch_size": 256,
+                "temp_threshold": 15,
+                "temp_decay": 0.25,
+                "res_blocks": 12,
+                "channels": 192,
+                "lr": 0.0003
+            })
         elif game.__class__.__name__ == "TicTacToe":
             pass  # Use default args
         else:
