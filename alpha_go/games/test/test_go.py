@@ -1,10 +1,11 @@
 import unittest
 import numpy as np
-from games.go.go import Go
+from games.go.go import Go, GoState
 
 class TestGo(unittest.TestCase):
     def setUp(self):
         self.game = Go(board_size=9, komi=6.5)
+        self.state = GoState(self.game)
 
     def test_initial_state(self):
         state = self.game.get_initial_state()
@@ -31,92 +32,63 @@ class TestGo(unittest.TestCase):
         group, liberties = self.game.count_liberties(state, 4, 4)
         self.assertEqual(len(liberties), 3)  # One liberty blocked
 
-    def test_remove_adj_dead_stones(self):
-        state = self.game.get_initial_state()
-        state[4, 4] = 1
-        state[3, 4] = -1
-        state[5, 4] = -1
-        state[4, 3] = -1
-        state[4, 5] = -1
-        new_state = self.game.remove_adj_dead_stones(state, 40)
-        self.assertEqual(new_state[4, 4], 0)  # Stone at (4, 4) should be removed
-
     def test_detect_suicide_moves(self):
         state = self.game.get_initial_state()
         state[3, 4] = -1
         state[5, 4] = -1
         state[4, 3] = -1
         state[4, 5] = -1
-        suicide_moves = self.game.detect_suicide_moves(state, 1)
+        suicide_moves = self.game.detect_suicide_moves(state)
         self.assertEqual(suicide_moves[4, 4], 1)  # Move at (4, 4) is a suicide move
 
     def test_detect_ko(self):
         state = self.game.get_initial_state()
-        self.game.last_2_boards = [state.copy(), state.copy()]
-        ko_moves = self.game.detect_ko(state, 1)
+        prev_state = state.copy()
+        ko_moves = self.game.detect_ko(state, prev_state)
         self.assertTrue(np.all(ko_moves == 0))  # No Ko moves in an empty board
 
     def test_get_valid_actions(self):
-        state = self.game.get_initial_state()
-        valid_actions = self.game.get_valid_actions(state)
+        game_info = self.state.get_info()
+        valid_actions = self.game.get_valid_actions(game_info)
         self.assertEqual(valid_actions.sum(), 82)  # 81 board positions + 1 pass move
 
-        state[4, 4] = 1
-        valid_actions = self.game.get_valid_actions(state)
+        game_info["board"][4, 4] = 1
+        valid_actions = self.game.get_valid_actions(game_info)
         self.assertEqual(valid_actions[40], 0)  # Position (4, 4) is no longer valid
 
     def test_is_valid_action(self):
-        state = self.game.get_initial_state()
-        self.assertTrue(self.game.is_valid_action(state, 0))  # Top-left corner
-        self.assertTrue(self.game.is_valid_action(state, 81))  # Pass move
+        game_info = self.state.get_info()
+        self.assertTrue(self.game.is_valid_action(game_info, 0))  # Top-left corner
+        self.assertTrue(self.game.is_valid_action(game_info, 81))  # Pass move
 
-        state[4, 4] = 1
-        self.assertFalse(self.game.is_valid_action(state, 40))  # Position (4, 4) is occupied
+        game_info["board"][4, 4] = 1
+        self.assertFalse(self.game.is_valid_action(game_info, 40))  # Position (4, 4) is occupied
 
     def test_get_next_state(self):
-        state = self.game.get_initial_state()
-        next_state = self.game.get_next_state(state, 40, 1)
-        self.assertEqual(next_state[4, 4], 1)  # Stone placed at (4, 4)
+        game_info = self.state.get_info()
+        next_state = self.game.get_next_state(game_info, 40)
+        self.assertEqual(next_state["board"][4, 4], 1)  # Stone placed at (4, 4)
 
-    def test_calc_territory(self):
-        state = self.game.get_initial_state()
-        state[0, 0] = 1
-        state[1, 1] = -1
-        territory = self.game.calc_territory(state)
-        self.assertEqual(territory[0, 1], 0)  # Neutral territory
+    def test_is_terminal(self):
+        game_info = self.state.get_info()
+        game_info["last_moves"]["1"] = 81  # Pass
+        game_info["last_moves"]["-1"] = 81  # Pass
+        score, is_terminal = self.game.is_terminal(game_info)
+        self.assertTrue(is_terminal)  # Game should end after two passes
 
-    def test_remove_dead_stones_end(self):
-        state = self.game.get_initial_state()
-        state[4, 4] = 1
-        state[3, 4] = -1
-        state[5, 4] = -1
-        state[4, 3] = -1
-        state[4, 5] = -1
-        new_state = self.game.remove_dead_stones_end(state)
-        self.assertEqual(new_state[4, 4], 0)  # Dead stone removed
+    def test_check_win(self):
+        game_info = self.state.get_info()
+        game_info["board"][0, 0] = 1
+        game_info["board"][1, 1] = -1
+        score = self.game.check_win(game_info)
+        self.assertTrue(score > 0)  # Black wins due to more area
 
-    def test_calc_score(self):
-        state = self.game.get_initial_state()
-        state[0, 0] = 1
-        state[1, 1] = -1
-        score = self.game.calc_score(state)
-        self.assertTrue(score < 0)  # White wins due to komi
-
-    def test_pass_move(self):
-        state = self.game.get_initial_state()
-        next_state = self.game.get_next_state(state, 81, 1)  # Pass move
-        self.assertTrue(np.array_equal(state, next_state))  # State should remain unchanged
-
-    def test_ko_rule(self):
-        state = self.game.get_initial_state()
-        state[4, 4] = 1
-        state[4, 5] = -1
-        state[3, 4] = -1
-        state[5, 4] = -1
-        state[4, 3] = -1
-        self.game.last_2_boards = [state.copy(), state.copy()]
-        ko_moves = self.game.detect_ko(state, 1)
-        self.assertTrue(np.all(ko_moves == 0))  # No Ko moves detected
+    def test_change_perspective(self):
+        game_info = self.state.get_info()
+        game_info["board"][0, 0] = 1
+        game_info["board"][1, 1] = -1
+        new_perspective = self.game.change_perspective(game_info)
+        self.assertTrue(np.array_equal(new_perspective["board"], -game_info["board"]))
 
 if __name__ == "__main__":
     unittest.main()

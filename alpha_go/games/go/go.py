@@ -1,7 +1,6 @@
 import numpy as np
 from games.base_game import BaseGame, GameState
-
-# TODO: FIX CAPTURE LOGIC
+from sgfmill import boards
 
 class Go(BaseGame):
     def __init__(self, board_size=9, komi=6.5):
@@ -9,6 +8,7 @@ class Go(BaseGame):
         self.col_count = board_size
         self.action_size = board_size * board_size + 1  # +1 for the pass move
         self.komi = komi
+        self.empty_board = boards.Board(board_size)
 
     def __repr__(self):
         return "Go"
@@ -57,23 +57,6 @@ class Go(BaseGame):
 
         return group, liberties
 
-    def remove_adj_dead_stones(self, state: np.ndarray, action: int, captures: int) -> tuple[np.ndarray, int]:
-        new_state = np.copy(state)
-        r, c = divmod(action, self.col_count)
-        opponent = -1 * new_state[r, c]
-
-        neighbors_idx, neighbors_val = self.get_neighbors(new_state, r, c)
-        opponent_stones = np.where(neighbors_val == opponent)[0]
-        opponent_stones = neighbors_idx[opponent_stones]  # Get coordinates of adjacent opponent stones
-        for (nx, ny) in opponent_stones:
-            group, liberties = self.count_liberties(new_state, nx, ny)
-            group = np.array(group)
-            if not liberties:
-                continue
-            new_state[group[:,0], group[:,1]] = 0
-            captures += len(group)
-        return new_state, captures
-
     def detect_suicide_moves(self, state: np.ndarray) -> np.ndarray:
         suicide_moves = np.zeros((self.row_count, self.col_count), dtype=np.int8)
 
@@ -92,27 +75,25 @@ class Go(BaseGame):
 
         return suicide_moves
 
-    def detect_ko(self, state: np.ndarray, last_2_boards: list[np.ndarray]) -> np.ndarray:
+    def detect_ko(self, state: np.ndarray, prev_state: np.ndarray) -> np.ndarray:
         ko_moves = np.zeros((self.row_count, self.col_count), dtype=np.int8)
-        if len(last_2_boards) < 2:
+        if np.sum(np.where(prev_state != 0)) < 2:
             return ko_moves
 
-        previous_board = last_2_boards[1]
-
-        possible_ko_moves = np.where((state == 0) & (previous_board == 1))
+        possible_ko_moves = np.where((state == 0) & (prev_state == 1))
 
         for r, c in zip(*possible_ko_moves):
             temp_state = np.copy(state)
             temp_state[r, c] = 1
-            if np.array_equal(temp_state, previous_board):
+            if np.array_equal(temp_state, prev_state):
                 ko_moves[r, c] = 1
         return ko_moves
 
     def get_valid_actions(self, game_info: dict) -> np.ndarray:
         state: np.ndarray = game_info["board"]
-        last_2_boards: list[np.ndarray] = game_info["last_2_boards"]
+        prev_state: np.ndarray = game_info["prev_state"]
         suicide_moves = self.detect_suicide_moves(state)
-        ko_moves = self.detect_ko(state, last_2_boards)
+        ko_moves = self.detect_ko(state, prev_state)
         valid_actions = np.zeros(self.action_size, dtype=np.int8)
 
         valid_actions[:-1] = (state.reshape(-1) == 0) & (suicide_moves.reshape(-1) == 0) & (ko_moves.reshape(-1) == 0)
@@ -120,162 +101,95 @@ class Go(BaseGame):
         return valid_actions
 
     def is_valid_action(self, game_info: dict, action: int) -> bool:
-        state: np.ndarray = game_info["board"]
-        last_2_boards: list[np.ndarray] = game_info["last_2_boards"]
-        if action == self.row_count * self.col_count:  # Pass move
+        if action == self.row_count * self.col_count or action < 0:  # Pass move or resignation
             return True
-        valid_actions = self.get_valid_actions(state, last_2_boards)
+        valid_actions = self.get_valid_actions(game_info)
         return valid_actions[action] == 1
-
+    
     def get_next_state(self, game_state: dict, action: int) -> dict:
         game_info = game_state.copy()
-        game_info["last_2_boards"] = game_info["last_2_boards"].copy()
-        game_info["last_2_actions"] = game_info["last_2_actions"].copy()
-        game_info["last_2_actions"].append(action)
-        if len(game_info["last_2_actions"]) > 2:
-            game_info["last_2_actions"].pop(0)
+        state: np.ndarray = game_info["board"].copy()
+        board: boards.Board = game_info["game_board"].copy()
+        last_moves: dict = game_info["last_moves"].copy()
+        player: int = game_info["player"]
 
-        if action == self.row_count * self.col_count or action < 0:  # Pass move or resignation
+        if action != self.action_size - 1 and action >= 0:
+            board.play(divmod(action, self.col_count), 'b' if player == 1 else 'w')
+        
+        last_moves[str(player)] = action
+        if action == self.action_size - 1:  # Pass move
             return game_info
-        row, col = divmod(action, self.col_count)
+        if action < 0: # Resignation
+            last_moves[str(player)] = self.action_size - 1  # Mark resignation as double pass for consistency
+            last_moves[str(-player)] = self.action_size - 1
+            return game_info
 
-        new_state = game_info["board"].copy()
-        new_state[row, col] = 1
-        new_state, game_info["captures"] = self.remove_adj_dead_stones(new_state, action, game_info["captures"])
+        game_info["last_moves"] = last_moves
+        game_info["game_board"] = board
 
-        game_info["last_2_boards"].append(new_state.copy())
-        if len(game_info["last_2_boards"]) > 2:
-            game_info["last_2_boards"].pop(0)
+        mapping = {'b': 1, 'w': -1, None: 0}
+        new_state = np.array([[mapping[c] for c in row] for row in board.board], dtype=np.int8)
+        new_state *= player
+
+        game_info["prev_state"] = state
         game_info["board"] = new_state
 
         return game_info
 
-    def calc_territory(self, state: np.ndarray) -> np.ndarray:
-        territory = np.zeros((self.row_count, self.col_count), dtype=np.int8)
-        visited = np.zeros((self.row_count, self.col_count), dtype=bool)
-        current_board = np.copy(state)
-
-        def dfs(r, c):
-            stack = [(r, c)]
-            territory_cells = []
-            bordering_colors = set()
-            while stack:
-                x, y = stack.pop()
-                if visited[x, y]:
-                    continue
-                visited[x, y] = True
-                territory_cells.append([x, y])
-                neighbors_idx, _ = self.get_neighbors(current_board, x, y)
-                for nx, ny in neighbors_idx:
-                    if visited[nx, ny]:
-                        bordering_colors.add(current_board[nx, ny])
-                    elif current_board[nx, ny] == 0:
-                        stack.append((nx, ny))
-            return territory_cells, bordering_colors
-
-        empty_cells = np.where(current_board == 0)
-        for r, c in zip(*empty_cells):
-            if visited[r, c]:
-                continue
-            territory_cells, bordering_colors = dfs(r, c)
-            if 1 in bordering_colors and -1 not in bordering_colors:
-                territory[territory_cells[:,0], territory_cells[:,1]] = 1  # Black territory
-            elif -1 in bordering_colors and 1 not in bordering_colors:
-                territory[territory_cells[:,0], territory_cells[:,1]] = -1  # White territory
-
-        return territory
-
-    def remove_dead_stones_end(self, state: np.ndarray, captures: int) -> tuple[np.ndarray, int]:
-        new_state = np.copy(state)
-        visited = np.zeros((self.row_count, self.col_count), dtype=bool)
-        territory = self.calc_territory(state)
-        possible_dead_stones = np.where((state != 0) & (territory.reshape(-1) == -state.reshape(-1)))
-
-        for r, c in zip(*possible_dead_stones):
-            if visited[r, c]:
-                continue
-            group, liberties = self.count_liberties(new_state, r, c)
-            group = np.array(group)
-
-            # Check for two eyes to determine if the group is alive
-            eye_count = 0
-            for x, y in liberties:
-                _, neighbors_val = self.get_neighbors(new_state, x, y)
-                if np.all(neighbors_val == state[r, c]):
-                    eye_count += 1
-            if eye_count >= 2:
-                continue
-
-            # If any liberty is in opponent's territory, the group is alive
-            if liberties and not np.all(territory[liberties[:,0], liberties[:,1]] == -state[r, c]):
-                continue
-            new_state[group[:,0], group[:,1]] = 0
-            visited[group[:,0], group[:,1]] = True
-            captures += len(group) * state[r, c]
-
-        return new_state, captures
-
     def check_win(self, game_info: dict) -> int | None:
-        state: np.ndarray = game_info["board"]
-        last_2_actions: list[int] = game_info["last_2_actions"]
+        board: boards.Board = game_info["game_board"]
         player: int = game_info["player"]
-        captures: int = game_info["captures"]
 
-        valid_actions = self.get_valid_actions(game_info)
-        if len(last_2_actions) < 2:
-            return -1, False
-        if last_2_actions[-1] != self.row_count * self.col_count and \
-           last_2_actions[-2] != self.row_count * self.col_count:
-            return -1, False
-        if np.any(valid_actions[:-1]):  # There are valid moves other than pass
-            return -1, False
+        score = board.area_score(komi=self.komi) * player # Calc score based on perspective
 
-        state, captures = self.remove_dead_stones_end(state, captures)
-        territory = self.calc_territory(state)
-        score = (np.sum(territory) + captures) - (self.komi * player)
         return score
 
     def is_terminal(self, game_info: dict) -> tuple[int | None, bool]:
-        last_2_actions: list[int] = game_info["last_2_actions"]
+        last_moves: dict = game_info["last_moves"]
 
-        if last_2_actions[-1] < 0:  # Resignation
-            return None, True
+        if not all(move == self.action_size - 1 for move in last_moves.values()):
+            return 0, False  # Game ongoing
 
         score = self.check_win(game_info)
-        if not score:
-            return 0, False  # Game ongoing
+        if score is None:
+            return None, False  # Resignation
         return score, True  # Game over
 
     def change_perspective(self, game_state: dict) -> dict:
         # Adjust board perspective based on the current player
         game_info = game_state.copy()
-        game_info["last_2_boards"] = game_info["last_2_boards"]
-        game_info["last_2_actions"] = game_info["last_2_actions"]
-        game_info["board"] = -1 * game_info["board"]
-        game_info["player"] *= -1
-        game_info["captures"] *= -1
+        len_game = len(game_info["action_seq"])
+        game_info["player"] = 1 if len_game % 2 == 0 else -1
+        game_info["board"] = game_info["board"] * game_info["player"]
+        game_info["captures"] = game_info["captures"] * game_info["player"]
+        game_info["prev_state"] = game_info["prev_state"] * game_info["player"]
         return game_info
 
 
 class GoState(GameState):
-    def __init__(self, game: Go, last_2_actions=None, last_2_boards=None, captures=0, player=1):
+    def __init__(self, game: Go, player=1):
         super().__init__(game=game, player=player)
-        self.last_2_actions = last_2_actions or []
-        self.last_2_boards = last_2_boards or []
-        self.captures = captures
+        self.board: np.ndarray = game.get_initial_state()
+        self.player: int = player
+        self.last_moves: dict = {
+            "1": None,
+            "-1": None
+        },
+        self.prev_state: np.ndarray = np.zeros((game.row_count, game.col_count), dtype=np.int8)
+        self.game_board = boards.Board(game.row_count)
     
     def get_info(self):
         return {
             "board": self.board.copy(),
             "player": self.player,
-            "last_2_actions": self.last_2_actions.copy(),
-            "last_2_boards": self.last_2_boards.copy(),
-            "captures": self.captures
+            "last_moves": self.last_moves.copy(),
+            "prev_state": self.prev_state.copy(),
+            "game_board": self.game_board.copy()
         }
     
     def update(self, game_info: dict):
         self.board = game_info["board"]
         self.player = game_info["player"]
-        self.last_2_actions = game_info["last_2_actions"]
-        self.last_2_boards = game_info["last_2_boards"]
-        self.captures = game_info["captures"]
+        self.last_moves = game_info["last_moves"]
+        self.prev_state = game_info["prev_state"]
+        self.game_board = game_info["game_board"]
