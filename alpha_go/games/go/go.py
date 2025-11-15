@@ -14,10 +14,12 @@ class Go(BaseGame):
         return "Go"
 
     def get_initial_state(self) -> np.ndarray:
+        '''Returns the initial state of the Go board as a numpy array.'''
         # Create an empty board (all zeros)
         return np.zeros((self.row_count, self.col_count), dtype=np.int8)
 
     def get_neighbors(self, state: np.ndarray, r: int, c: int) -> tuple[np.ndarray, np.ndarray]:
+        '''Returns the neighbors' indices and their values for a given position (r, c) on the board.'''
         offsets = np.array([(-1, 0), (1, 0), (0, -1), (0, 1)])
         neighbors_idx = offsets + np.array([r, c])
 
@@ -28,6 +30,7 @@ class Go(BaseGame):
         return neighbors_idx, np.array([state[x, y] for x, y in neighbors_idx])
 
     def count_liberties(self, state: np.ndarray, r: int, c: int) -> tuple[list[list[int]], set[tuple[int, int]]]:
+        '''Counts the liberties of the group of stones connected to the stone at (r, c).'''
         visited = np.zeros((self.row_count, self.col_count), dtype=bool)
         stack = [(r, c)]
         group = [[r, c]]
@@ -58,10 +61,12 @@ class Go(BaseGame):
         return group, liberties
 
     def detect_suicide_moves(self, state: np.ndarray) -> np.ndarray:
+        '''Detects suicide moves on the board.'''
         suicide_moves = np.zeros((self.row_count, self.col_count), dtype=np.int8)
 
         possible_moves = np.where(state == 0)
 
+        # Check each possible move for suicide
         for r, c in zip(*possible_moves):
             _, neighbors = self.get_neighbors(state, r, c)
             if not any(neighbors == -1):
@@ -76,12 +81,14 @@ class Go(BaseGame):
         return suicide_moves
 
     def detect_ko(self, state: np.ndarray, prev_state: np.ndarray) -> np.ndarray:
+        '''Detects ko moves on the board.'''
         ko_moves = np.zeros((self.row_count, self.col_count), dtype=np.int8)
         if np.sum(np.where(prev_state != 0)) < 2:
             return ko_moves
 
         possible_ko_moves = np.where((state == 0) & (prev_state == 1))
 
+        # Check each possible ko move
         for r, c in zip(*possible_ko_moves):
             temp_state = np.copy(state)
             temp_state[r, c] = 1
@@ -90,6 +97,7 @@ class Go(BaseGame):
         return ko_moves
 
     def get_valid_actions(self, game_info: dict) -> np.ndarray:
+        '''Returns a numpy array indicating valid actions on the board.'''
         state: np.ndarray = game_info["board"]
         prev_state: np.ndarray = game_info["prev_state"]
         suicide_moves = self.detect_suicide_moves(state)
@@ -101,21 +109,26 @@ class Go(BaseGame):
         return valid_actions
 
     def is_valid_action(self, game_info: dict, action: int) -> bool:
+        '''Checks if a given action is valid based on the current game state.'''
         if action == self.row_count * self.col_count or action < 0:  # Pass move or resignation
             return True
         valid_actions = self.get_valid_actions(game_info)
         return valid_actions[action] == 1
     
     def get_next_state(self, game_state: dict, action: int) -> dict:
+        '''Returns the next game state after applying the given action.'''
+
         game_info = game_state.copy()
         state: np.ndarray = game_info["board"].copy()
         board: boards.Board = game_info["game_board"].copy()
         last_moves: dict = game_info["last_moves"].copy()
         player: int = game_info["player"]
 
+        # Apply the action to the board if it's not a pass or resignation
         if action != self.action_size - 1 and action >= 0:
             board.play(divmod(action, self.col_count), 'b' if player == 1 else 'w')
-        
+
+        # Update last moves
         last_moves[str(player)] = action
         if action == self.action_size - 1:  # Pass move
             return game_info
@@ -127,6 +140,7 @@ class Go(BaseGame):
         game_info["last_moves"] = last_moves
         game_info["game_board"] = board
 
+        # Update the board state
         mapping = {'b': 1, 'w': -1, None: 0}
         new_state = np.array([[mapping[c] for c in row] for row in board.board], dtype=np.int8)
         new_state *= player
@@ -137,6 +151,8 @@ class Go(BaseGame):
         return game_info
 
     def check_win(self, game_info: dict) -> int | None:
+        '''Calculates the score to determine the winner of the game.'''
+
         board: boards.Board = game_info["game_board"]
         player: int = game_info["player"]
 
@@ -145,6 +161,8 @@ class Go(BaseGame):
         return score
 
     def is_terminal(self, game_info: dict) -> tuple[int | None, bool]:
+        '''Determines if the game has reached a terminal state.'''
+
         last_moves: dict = game_info["last_moves"]
 
         if not all(move == self.action_size - 1 for move in last_moves.values()):
@@ -156,6 +174,8 @@ class Go(BaseGame):
         return score, True  # Game over
 
     def change_perspective(self, game_state: dict) -> dict:
+        '''Changes the perspective of the game state to the current player.'''
+
         # Adjust board perspective based on the current player
         game_info = game_state.copy()
         len_game = len(game_info["action_seq"])
@@ -179,6 +199,7 @@ class GoState(GameState):
         self.game_board = boards.Board(game.row_count)
     
     def get_info(self):
+        '''Returns a dictionary containing the current state information.'''
         return {
             "board": self.board.copy(),
             "player": self.player,
@@ -188,6 +209,7 @@ class GoState(GameState):
         }
     
     def update(self, game_info: dict):
+        '''Updates the current state with the provided game information.'''
         self.board = game_info["board"]
         self.player = game_info["player"]
         self.last_moves = game_info["last_moves"]
