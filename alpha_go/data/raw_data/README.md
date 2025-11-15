@@ -1,0 +1,1 @@
+All Go 9x9 raw data was acquired from: https://homepages.cwi.nl/~aeb/go/games/index.html
