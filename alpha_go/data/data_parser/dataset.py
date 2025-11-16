@@ -13,8 +13,8 @@ class ProcessedDataset(Dataset):
         self.transform = transform_func
         self.device = device if device is not None else torch.device('cpu')
 
-        state_file = os.path.join(data_dir, "state.json")
-        action_file = os.path.join(data_dir, "actions.json")
+        state_file = os.path.join(data_dir, "states.npy")
+        action_file = os.path.join(data_dir, "actions.npy")
 
         if not (os.path.exists(state_file) and os.path.exists(action_file)):
             raise FileNotFoundError("One or more data files are missing in the specified directory.")
