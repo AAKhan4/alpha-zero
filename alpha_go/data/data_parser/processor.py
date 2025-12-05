@@ -19,7 +19,7 @@ class DataProcessor:
 
     def process_data(self):
         '''Processes raw data files and saves them in a structured format.'''
-        raw_files = [f for f in os.listdir(self.raw_data_dir) if f.endswith('.txt')]
+        raw_files = [f for f in os.listdir(self.raw_data_dir) if f.endswith('.sgf')]
 
         all_states = []
         all_actions = []
