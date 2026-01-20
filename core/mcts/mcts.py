@@ -32,7 +32,7 @@ class MCTS:
         # Mask invalid actions and normalize probabilities for all states
         valid_actions = np.stack([self.game.get_valid_actions(game.game_state.get_info()) for game in games])  # Batch valid actions
         policy *= valid_actions  # Mask invalid actions for all states
-        policy /= np.sum(policy, axis=1, keepdims=True)  # Normalize probabilities across actions
+        policy /= np.sum(policy, axis=1, keepdims=True) + 1e-8 # Normalize probabilities across actions
 
         # Initialize root nodes for all parallel games
         for i, game in enumerate(games):
@@ -75,7 +75,7 @@ class MCTS:
                 # Mask invalid actions and normalize probabilities for all states
                 valid_actions = np.stack([self.game.get_valid_actions(node.info) for node in expandable_nodes])  # Batch valid actions
                 policy *= valid_actions  # Mask invalid actions for all states
-                policy /= np.sum(policy, axis=1, keepdims=True) + 1e-8  # Normalize probabilities across actions
+                policy /= np.sum(policy, axis=1, keepdims=True) + 1e-8 # Normalize probabilities across actions
 
                 # Expand and backpropagate for all expandable nodes
                 for i, node in enumerate(expandable_nodes):
