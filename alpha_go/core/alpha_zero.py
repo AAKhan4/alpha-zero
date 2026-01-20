@@ -23,6 +23,29 @@ class AlphaZero:
         self.args = args
         self.mcts = MCTS(game, args, model)
 
+    def pretrain(self, data: List[Tuple[np.ndarray, np.ndarray, float]]) -> float:
+        # Pretrain the model using human-gameplay data
+        random.shuffle(data)  # Shuffle data for training
+
+        batch_losses = []
+        for i in range(0, len(data), self.args["batch_size"]):
+            # Process batches of training data
+            batch = data[i:i + self.args["batch_size"]]
+            state, pol_targets, val_targets = zip(*batch)
+            state, pol_targets, val_targets = self.prepare_batch(state, pol_targets, val_targets)
+
+            # Forward pass and compute loss
+            out_pol, out_val = self.model(state)
+            loss = self.calc_loss(out_pol, pol_targets, out_val, val_targets)
+            batch_losses.append(loss.item())
+            # Backward pass and optimizer step
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+        
+        # Return average loss for the epoch
+        return float(np.mean(batch_losses)) if batch_losses else 0.0
+    
     def self_play(self) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         # Perform self-play to generate training data
         ret_mem = []  # Memory to store game data
@@ -76,9 +99,38 @@ class AlphaZero:
         # Return average loss for the epoch
         return float(np.mean(batch_losses)) if batch_losses else 0.0
 
-    def learn(self):
+    def learn(self, pretraining_dir: str = None) -> None:
         # Main learning loop for AlphaZero
         for i in range(self.args["num_iterations"]):
+            # Pretrain if specified
+            pretraining_data = []
+            if pretraining_dir:
+                states = np.load(os.path.join(pretraining_dir, "states.npy"))
+                actions = np.load(os.path.join(pretraining_dir, "actions.npy"))
+
+                #TODO: cummulative means for actions for each state to build all unique state policies pairs
+                unique_states = list(set(states.tolist()))
+                unique_states = np.array([np.array(s, dtype=np.int8) for s in unique_states])
+                policies = [np.zeros(self.game.action_size, dtype=np.float32) for _ in unique_states]
+
+                for s in states:
+                    idx = np.where((unique_states == s).all(axis=1))[0][0]
+                    policies[idx][actions[idx]] += 1
+                
+                policies = np.array(policies, dtype=np.float32)
+                policies /= np.sum(policies, axis=1, keepdims=True)  # Normalize policies
+
+                pretraining_data = list(zip(unique_states, policies, [0.5]*len(unique_states)))  # Dummy values for outcomes
+
+            pretraining_losses = []
+
+            self.model.train()
+            for _ in tqdm(range(self.args["pretraining_epochs"]), desc="Pretraining"):
+                avg_loss = self.pretrain(pretraining_data)
+                pretraining_losses.append(avg_loss)
+
+            print(f"Pretraining Loss: {avg_loss}\n")
+
             mem = []  # Memory for self-play data
             self.model.eval()  # Set model to evaluation mode
 
