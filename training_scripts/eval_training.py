@@ -1,10 +1,12 @@
-from games.game_select import GameSelection
 import matplotlib.pyplot as plt
+from training_scripts.training_args import TrainingArgsBuilder
+from games.tic_tac_toe.tic_tac_toe import TicTacToe
 
 import os
 
-game = GameSelection().pick_game()
-args = GameSelection().get_args(game)
+game = TicTacToe()
+args_builder = TrainingArgsBuilder(game)
+args = args_builder.build_args(game)
 
 
 # Directory containing the loss files for all iterations
