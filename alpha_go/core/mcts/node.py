@@ -29,7 +29,7 @@ class Node:
         # Q-value: normalized value of the node (scaled to [-1, 1])
         q = (child.value_sum / child.visit_count) if child.visit_count > 0 else 0
         # UCB formula: Q + exploration term
-        return q + self.args['c'] * (np.sqrt(self.visit_count) / (child.visit_count + 1)) * child.prior
+        return q + self.args['c'] * np.sqrt(np.log(self.visit_count) / (child.visit_count + 1)) * child.prior
 
     # Expands the node by creating child nodes for valid actions based on the policy
     def expand(self, policy: np.ndarray):
