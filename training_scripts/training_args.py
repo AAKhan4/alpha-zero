@@ -4,12 +4,12 @@ from games.base_game import BaseGame
 class TrainingArgsBuilder:
     def __init__(self, game: BaseGame):
         self.args = {
-            "num_searches": 100, # Number of MCTS simulations per move
+            "num_searches": 80, # Number of MCTS simulations per move
             "c": 1.0, # Exploration constant for MCTS
             "num_iterations": 10, # Number of training iterations
-            "num_self_play": 200, # Number of self-play games per iteration
+            "num_self_play": 100, # Number of self-play games per iteration
             "max_parallel_games": 128, # Max parallel games during self-play
-            "num_epochs": 8, # Training epochs per iteration
+            "num_epochs": 7, # Training epochs per iteration
             "batch_size": 64, # Mini-batch size for training
             "init_temperature": 1.1, # Initial temperature for action selection
             "temp_threshold": 6, # Moves before temperature decay
