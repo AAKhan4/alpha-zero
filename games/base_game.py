@@ -23,7 +23,7 @@ class BaseGame:
     def is_valid_action(self, game_info: dict, action: int) -> bool:
         raise NotImplementedError
 
-    def check_win(self, game_info: dict) -> bool | None:
+    def check_win(self, game_info: dict) -> int | None:
         raise NotImplementedError
 
     def change_perspective(self, game_info: dict) -> dict:
@@ -32,7 +32,7 @@ class BaseGame:
     def is_terminal(self, game_info: dict) -> tuple[int, bool]:
         # Determine if the game is over (win, draw, or ongoing)
         score = self.check_win(game_info)
-        if not score:
+        if score is None:
             return 0, False  # Game ongoing
         return score, True  # Game over
 
