@@ -20,7 +20,8 @@ class TrainingArgsBuilder:
             "channels": 64, # Number of channels in the neural network
             "num_workers": 5, # Number of parallel worker processes
             "lr": 0.001, # Learning rate for the optimizer
-            "weight_decay": 1e-4 # Weight decay for the optimizer
+            "weight_decay": 1e-4, # Weight decay for the optimizer
+            "pretraining_epochs": 0 # Number of epochs for pretraining
         }
         self.build_args(game)
 
