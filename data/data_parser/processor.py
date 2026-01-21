@@ -27,36 +27,42 @@ class DataProcessor:
         for file_name in raw_files: # loops assuming all files are in main raw data directory
             file_path = os.path.join(self.raw_data_dir, file_name)
             with open(file_path, 'r') as f:
-                for line in f:
-                    if ';' not in line and '[' not in line:
-                        continue
-                    b = self.board.copy()
+                content = f.read().strip()
+                moves = content.split(';')[1:]  # Skip header info
+                moves = moves[1:]
 
-                    try:
-                        for move in line.strip().split(';'):
-                            if not move:
-                                continue
-                            color = move[0].lower()
-                            coords = move[2:-1]
-                            if coords == '':
-                                continue
-                            col = ord(coords[0]) - ord('a')
-                            row = ord(coords[1]) - ord('a')
-                            try:
+                b = self.board.copy()
+
+                try:
+                    for move in moves:
+                        if not move:
+                            continue
+                        color = move[0].lower()
+                        last_idx = move.rfind(']')
+                        coords = move[2:last_idx]
+                        if coords == '':
+                            continue
+                        col = ord(coords[0]) - ord('a')
+                        row = ord(coords[1]) - ord('a')
+                        try:
+                            if col < self.game.col_count and row < self.game.row_count:
                                 b.play(row, col, color)
-                            except ValueError:
-                                raise ValueError(f"Invalid move {move} in file {file_name}")
+                        except (IndexError, ValueError):
+                            raise ValueError(f"Invalid move {move} in file {file_name}")
 
-                            mapping = {'b': 1, 'w': -1, None: 0}
-                            new_state = np.array([[mapping[c] for c in row] for row in b.board], dtype=np.int8)
-                            if color == 'w':
-                                new_state *= -1  # Perspective of white
-                            all_states.append(self.game.get_encoded_state(new_state))
-                            action = row * self.board_size + col
-                            all_actions.append(action)
-                    except ValueError:
-                        print(f"Invalid move in file {file_name}. Skipping rest of game.")
-                        continue
+                        mapping = {'b': 1, 'w': -1, None: 0}
+                        new_state = np.array([[mapping[c] for c in row] for row in b.board], dtype=np.int8)
+                        if color == 'w':
+                            new_state *= -1  # Perspective of white
+                        all_states.append(self.game.get_encoded_state(new_state))
+
+                        action = row * self.game.col_count + col
+                        if action >= self.board_size:
+                            action = self.board_size  # Pass move
+                        all_actions.append(action)
+                except ValueError:
+                    print(f"Invalid move in file {file_name}. Skipping rest of game.")
+                    continue
 
         states_array = np.array(all_states, dtype=np.int8)
         actions_array = np.array(all_actions, dtype=np.int8)
