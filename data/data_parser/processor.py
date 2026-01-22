@@ -29,12 +29,12 @@ class DataProcessor:
             file_path = os.path.join(self.raw_data_dir, file_name)
             with open(file_path, 'r') as f:
                 content = f.read().strip()
-                moves = content.split(';')  # Skip header info
-                header = moves.pop(0)  # Remove the first empty element
+                moves = content.split(';')[1:]  # Skip header info
+                header = moves[0]
+                moves = moves[1:]  # Actual moves start from index 1
+
                 res_idx = header.find('RE[')
                 result = header[res_idx + 3:res_idx + 5] if res_idx != -1 else 'Unknown'
-                if result not in ['B+', 'W+']:
-                    continue  # Skip non-standard results
                 result_color = 'b' if result == 'B+' else 'w'
 
                 b = self.board.copy()
@@ -82,9 +82,24 @@ class DataProcessor:
         actions_array = np.array(all_actions, dtype=np.int8)
         values_array = np.array(all_values, dtype=np.float32)
 
-        np.save(os.path.join(self.processed_data_dir, 'states.npy'), states_array)
-        np.save(os.path.join(self.processed_data_dir, 'actions.npy'), actions_array)
-        np.save(os.path.join(self.processed_data_dir, 'values.npy'), values_array)
+        unique_states, inv_idx, counts = np.unique(states_array, axis=0, return_inverse=True, return_counts=True)
+        policies = np.zeros((len(unique_states), self.game.action_size), dtype=np.float32)
+        agr_values = np.zeros(len(unique_states), dtype=np.float32)
+
+        for idx, (a, v) in zip(inv_idx, zip(actions_array, values_array)):
+            policies[idx][a] += 1
+            agr_values[idx] += v
+
+        policies /= counts[:, None] + 1e-8  # Normalize policies
+        agr_values /= counts + 1e-8  # Normalize values
+
+        np.save(os.path.join(self.processed_data_dir, 'states.npy'), unique_states)
+        np.save(os.path.join(self.processed_data_dir, 'policies.npy'), policies)
+        np.save(os.path.join(self.processed_data_dir, 'values.npy'), agr_values)
+
+        print(f"Processed {len(raw_files)} files with a total of {len(all_states)} samples.")
+        print(f"Generated {len(unique_states)} unique states.")
+        print(f"Average samples per unique state: {np.mean(counts):.2f}")
 
     def get_all_transforms(self, state: np.ndarray, action: int) -> list[tuple[np.ndarray, int]]:
         '''Generates all rotations and reflections of the given state and action.'''
