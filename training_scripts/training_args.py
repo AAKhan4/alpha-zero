@@ -52,7 +52,8 @@ class TrainingArgsBuilder:
                 "temp_decay": 0.25,
                 "res_blocks": 12,
                 "channels": 192,
-                "lr": 0.0003
+                "lr": 0.0003,
+                "pretraining_epochs": 10
             })
         elif game.__class__.__name__ == "TicTacToe":
             pass  # Use default args
