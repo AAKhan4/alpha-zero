@@ -231,22 +231,10 @@ class AlphaZero:
     def prepare_pretraining_data(self, pretraining_dir: str) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         """Prepare pretraining data from the specified directory"""
         states = np.load(os.path.join(pretraining_dir, "states.npy"))
-        actions = np.load(os.path.join(pretraining_dir, "actions.npy"))
+        policies = np.load(os.path.join(pretraining_dir, "policies.npy"))
         values = np.load(os.path.join(pretraining_dir, "values.npy"))
 
-        unique_states, inv_idx, counts = np.unique(states, axis=0, return_inverse=True, return_counts=True)
-        policies = np.zeros((len(unique_states), self.game.action_size), dtype=np.float32)
-        agr_values = np.zeros(len(unique_states), dtype=np.float32)
-
-        for idx, (a, v) in zip(inv_idx, zip(actions, values)):
-            policies[idx][a] += 1
-            agr_values[idx] += v
-
-        policies /= counts[:, None] + 1e-8  # Normalize policies
-        agr_values /= counts + 1e-8  # Normalize values
-
-
-        pretraining_data = list(zip(unique_states, policies, agr_values))
+        pretraining_data = list(zip(states, policies, values))
         return pretraining_data
 
 
