@@ -1,0 +1,43 @@
+from time import time
+import torch
+
+from core.alpha_zero import AlphaZero
+from core.mcts.res_net import ResNet
+from games.base_game import BaseGame
+from games.go.go import Go
+from training_scripts.training_args import TrainingArgsBuilder
+
+
+class ModelTrainer:
+    def __init__(self, game: BaseGame = None, args=None):
+
+        game = game if game else Go()
+
+        args_builder = TrainingArgsBuilder(game)
+        args = args if args else args_builder.build_args(game)
+
+        print(f"\nTraining on {game} with args: {args}\n")
+
+        start_time = time()
+        self.run(game, args)
+        end_time = time()
+
+        time_taken = end_time - start_time
+
+        hours, rem = divmod(time_taken, 3600)
+        minutes, seconds = divmod(rem, 60)
+        print(f"\nTraining completed in {int(hours)}h:{int(minutes)}m:{int(seconds)}s")
+
+    def run(self, game: BaseGame, args: dict, model=None):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}\n")
+
+        model = model if model else ResNet(game, args["res_blocks"], args["channels"], device)  # Initialize the neural network model
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"], weight_decay=args["weight_decay"])  # Adam optimizer
+
+        alpha_zero = AlphaZero(model, optimizer, game, args)
+        alpha_zero.supervised_learning("./data/processed_data/go/9x9")
+
+if __name__ == "__main__":
+    ModelTrainer()  # Start training the model
