@@ -39,7 +39,7 @@ class ModelTrainer:
         optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"], weight_decay=args["weight_decay"])  # Adam optimizer
 
         alpha_zero = AlphaZero(model, optimizer, game, args)
-        alpha_zero.learn()
+        alpha_zero.reinforcement_learning()
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn", force=True)
