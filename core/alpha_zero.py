@@ -16,7 +16,7 @@ from core.mcts.res_net import ResNet
 
 class AlphaZero:
     def __init__(self, model: ResNet, optimizer: torch.optim.Optimizer, game: BaseGame, args: Dict):
-        # Initialize AlphaZero with model, optimizer, game, and configuration arguments
+        """Initialize AlphaZero with model, optimizer, game, and configuration arguments"""
         self.model = model
         self.optimizer = optimizer
         self.game = game
@@ -24,7 +24,7 @@ class AlphaZero:
         self.mcts = MCTS(game, args, model)
 
     def pretrain(self, data: List[Tuple[np.ndarray, np.ndarray, float]]) -> float:
-        # Pretrain the model using human-gameplay data
+        """Pretrain the model using human-gameplay data"""
         random.shuffle(data)  # Shuffle data for training
 
         batch_losses = []
@@ -33,6 +33,7 @@ class AlphaZero:
             batch = data[i:i + self.args["batch_size"]]
             state, pol_targets, val_targets = zip(*batch)
             state, pol_targets, val_targets = self.prepare_batch(state, pol_targets, val_targets)
+            state = state.reshape((state.size(0), 3, self.game.row_count, self.game.col_count))  # Reshape for Go 9x9
 
             # Forward pass and compute loss
             out_pol, out_val = self.model(state)
@@ -47,7 +48,7 @@ class AlphaZero:
         return float(np.mean(batch_losses)) if batch_losses else 0.0
     
     def self_play(self) -> List[Tuple[np.ndarray, np.ndarray, float]]:
-        # Perform self-play to generate training data
+        """Perform self-play to generate training data"""
         ret_mem = []  # Memory to store game data
         games = [SPG(self.game) for _ in range(self.args["num_parallel_games"])]  # Parallel games
 
@@ -76,7 +77,7 @@ class AlphaZero:
         return ret_mem
 
     def train(self, mem: List[Tuple[np.ndarray, np.ndarray, float]]) -> float:
-        # Train the model using the generated memory
+        """Train the model using the generated memory from self-play"""
         random.shuffle(mem)  # Shuffle memory for training
         batch_losses = []
 
@@ -99,22 +100,25 @@ class AlphaZero:
         # Return average loss for the epoch
         return float(np.mean(batch_losses)) if batch_losses else 0.0
 
-    def learn(self, pretraining_dir: str = None) -> None:
-        # Main learning loop for AlphaZero
+    def supervised_learning(self, pretraining_dir: str) -> None:
+        """Supervised learning from pretraining data"""
+        pretraining_data = self.prepare_pretraining_data(pretraining_dir)
+
+        pretraining_losses = []
+
+        self.model.train()
+        for _ in tqdm(range(self.args["pretraining_epochs"]), desc="Supervised Training"):
+            avg_loss = self.pretrain(pretraining_data)
+            pretraining_losses.append(avg_loss)
+
+        print(f"Supervised Training Final Loss: {avg_loss}\n")
+
+        self.save_model(1, flag="sl")
+        self.save_losses(1, pretraining_losses, flag="sl")
+
+    def reinforcement_learning(self, flag: str = "rl") -> None:
+        """AlphaZero reinforcement learning loop"""
         for i in range(self.args["num_iterations"]):
-            # Pretrain if specified
-            if pretraining_dir:
-                pretraining_data = self.prepare_pretraining_data(pretraining_dir)
-
-                pretraining_losses = []
-
-                self.model.train()
-                for _ in tqdm(range(self.args["pretraining_epochs"]), desc="Pretraining"):
-                    avg_loss = self.pretrain(pretraining_data)
-                    pretraining_losses.append(avg_loss)
-
-                print(f"Pretraining Loss: {avg_loss}\n")
-
             mem = []  # Memory for self-play data
             self.model.eval()  # Set model to evaluation mode
 
@@ -161,20 +165,21 @@ class AlphaZero:
             print(f"Current Loss: {avg_loss}\n")
 
             # Save model and training losses
-            self.save_model(i)
-            self.save_losses(i, epoch_losses)
+            self.save_model(i, flag=flag)
+            self.save_losses(i, epoch_losses, flag=flag)
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()  # Clear GPU memory
 
     def calc_mcts_probs(self, spg: SPG) -> np.ndarray:
-        # Compute MCTS probabilities for actions
+        """Compute MCTS probabilities for actions"""
         mcts_probs = np.zeros(self.game.action_size)
         for child in spg.root.children:
             mcts_probs[child.action] = child.visit_count
         return mcts_probs / np.sum(mcts_probs)
 
     def sample_action(self, mcts_probs: np.ndarray, state: np.ndarray) -> int:
+        """Sample an action based on MCTS probabilities and temperature"""
         temp = self.args["init_temperature"]
         if temp > 0.1:
             num_moves = np.sum(state != 0)
@@ -187,7 +192,7 @@ class AlphaZero:
         return np.random.choice(self.game.action_size, p=action_probs)
 
     def backpropagate(self, spg: SPG, val: float, player: int, ret_mem: List) -> None:
-        # Backpropagate game results to update memory
+        """Backpropagate game results to update memory"""
         for hist_state, hist_probs, hist_player in spg.mem:
             hist_outcome = val if hist_player == player else self.game.get_opponent_val(val)
             ret_mem.append((
@@ -197,50 +202,56 @@ class AlphaZero:
             ))
 
     def prepare_batch(self, state: np.ndarray, pol_targets: np.ndarray, val_targets: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # Prepare batch data for training
+        """Prepare batch data for training"""
         state = torch.tensor(np.array(state), dtype=torch.float32, device=self.model.device)
         pol_targets = torch.tensor(np.array(pol_targets), dtype=torch.float32, device=self.model.device)
         val_targets = torch.tensor(np.array(val_targets).reshape(-1, 1), dtype=torch.float32, device=self.model.device)
         return state, pol_targets, val_targets
 
     def calc_loss(self, out_pol: torch.Tensor, pol_targets: torch.Tensor, out_val: torch.Tensor, val_targets: torch.Tensor) -> torch.Tensor:
-        # Compute combined policy and value loss
+        """Compute combined policy and value loss"""
         policy_loss = F.kl_div(torch.log_softmax(out_pol, dim=1), pol_targets, reduction="batchmean")
         value_loss = F.mse_loss(out_val, val_targets)
         return (policy_loss + value_loss)
 
-    def save_model(self, iteration: int) -> None:
-        # Save model and optimizer state to disk
-        model_dir = os.path.join("./models", f"{self.game}")
+    def save_model(self, iteration: int, flag: str = None) -> None:
+        """Save model and optimizer state to disk"""
+        model_dir = os.path.join("./models", f"{self.game}", f"{flag}" if flag else "")
         os.makedirs(model_dir, exist_ok=True)
         torch.save(self.model.state_dict(), os.path.join(model_dir, f"model_{iteration}.pth"))
         torch.save(self.optimizer.state_dict(), os.path.join(model_dir, f"optimizer_{iteration}.pth"))
 
-    def save_losses(self, iteration: int, epoch_losses: List[float]) -> None:
-        # Save training losses to a file
-        loss_file = os.path.join("./models", f"{self.game}", f"loss_{iteration}.txt")
+    def save_losses(self, iteration: int, epoch_losses: List[float], flag: str = None) -> None:
+        """Save training losses to a file"""
+        loss_file = os.path.join("./models", f"{self.game}", f"{flag}" if flag else "", "losses", f"loss_{iteration}.txt")
+        os.makedirs(os.path.dirname(loss_file), exist_ok=True)
         with open(loss_file, "w") as f:
             f.writelines(f"{loss}\n" for loss in epoch_losses)
     
     def prepare_pretraining_data(self, pretraining_dir: str) -> List[Tuple[np.ndarray, np.ndarray, float]]:
-        # Prepare pretraining data from the specified directory
+        """Prepare pretraining data from the specified directory"""
         states = np.load(os.path.join(pretraining_dir, "states.npy"))
         actions = np.load(os.path.join(pretraining_dir, "actions.npy"))
+        values = np.load(os.path.join(pretraining_dir, "values.npy"))
 
         unique_states, inv_idx, counts = np.unique(states, axis=0, return_inverse=True, return_counts=True)
         policies = np.zeros((len(unique_states), self.game.action_size), dtype=np.float32)
+        agr_values = np.zeros(len(unique_states), dtype=np.float32)
 
-        for idx, a in zip(inv_idx, actions):
+        for idx, (a, v) in zip(inv_idx, zip(actions, values)):
             policies[idx][a] += 1
-        
-        policies /= counts[:, None] + 1e-8  # Normalize policies
+            agr_values[idx] += v
 
-        pretraining_data = list(zip(unique_states, policies, [0.5]*len(unique_states)))  # Dummy values for outcomes
+        policies /= counts[:, None] + 1e-8  # Normalize policies
+        agr_values /= counts + 1e-8  # Normalize values
+
+
+        pretraining_data = list(zip(unique_states, policies, agr_values))
         return pretraining_data
 
 
-# Worker function for parallel self-play
 def self_play_worker(args: dict) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+        """Worker function for self-play in multiprocessing"""
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # Create AlphaZero instance and perform self-play
         model = ResNet(args["game"], args["args"]["res_blocks"], args["args"]["channels"], device)
