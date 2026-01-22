@@ -23,13 +23,19 @@ class DataProcessor:
 
         all_states = []
         all_actions = []
+        all_values = []
 
         for file_name in raw_files: # loops assuming all files are in main raw data directory
             file_path = os.path.join(self.raw_data_dir, file_name)
             with open(file_path, 'r') as f:
                 content = f.read().strip()
-                moves = content.split(';')[1:]  # Skip header info
-                moves = moves[1:]
+                moves = content.split(';')  # Skip header info
+                header = moves.pop(0)  # Remove the first empty element
+                res_idx = header.find('RE[')
+                result = header[res_idx + 3:res_idx + 5] if res_idx != -1 else 'Unknown'
+                if result not in ['B+', 'W+']:
+                    continue  # Skip non-standard results
+                result_color = 'b' if result == 'B+' else 'w'
 
                 b = self.board.copy()
 
@@ -52,7 +58,7 @@ class DataProcessor:
                             raise ValueError(f"Invalid move {move} in file {file_name}")
 
                         mapping = {'b': 1, 'w': -1, None: 0}
-                        new_state = np.array([[mapping[c] for c in row] for row in b.board], dtype=np.int8)
+                        new_state = np.array([[mapping[c] for c in row] for row in b.board], dtype=np.int8).reshape((9, 9))
                         if color == 'w':
                             new_state *= -1  # Perspective of white
 
@@ -62,18 +68,23 @@ class DataProcessor:
 
                         transforms = self.get_all_transforms(new_state, action)
 
+                        value = 0.6 if color == result_color else 0.5
+
                         for s, a in transforms:
                             all_states.append(self.game.get_encoded_state(s))
                             all_actions.append(a)
+                            all_values.append(value)
                 except ValueError:
                     print(f"Invalid move in file {file_name}. Skipping rest of game.")
                     continue
 
         states_array = np.array(all_states, dtype=np.int8)
         actions_array = np.array(all_actions, dtype=np.int8)
+        values_array = np.array(all_values, dtype=np.float32)
 
         np.save(os.path.join(self.processed_data_dir, 'states.npy'), states_array)
         np.save(os.path.join(self.processed_data_dir, 'actions.npy'), actions_array)
+        np.save(os.path.join(self.processed_data_dir, 'values.npy'), values_array)
 
     def get_all_transforms(self, state: np.ndarray, action: int) -> list[tuple[np.ndarray, int]]:
         '''Generates all rotations and reflections of the given state and action.'''
