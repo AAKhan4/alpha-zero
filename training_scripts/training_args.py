@@ -45,7 +45,7 @@ class TrainingArgsBuilder:
                 "num_searches": 800,
                 "num_self_play": 1000,
                 "c": 2.0,
-                "num_iterations": 20,
+                "num_iterations": 25,
                 "num_epochs": 20,
                 "batch_size": 256,
                 "temp_threshold": 15,
@@ -53,7 +53,7 @@ class TrainingArgsBuilder:
                 "res_blocks": 12,
                 "channels": 192,
                 "lr": 0.0003,
-                "pretraining_epochs": 10
+                "pretraining_epochs": 50
             })
         elif game.__class__.__name__ == "TicTacToe":
             pass  # Use default args
