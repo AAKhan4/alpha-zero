@@ -56,6 +56,9 @@ class ModelTrainer:
                 print(f"Loaded model from {model_path} and optimizer from {optimizer_path}\n")
             else:
                 raise FileNotFoundError("No valid model or optimizer files found in the specified directory.\n")
+            
+        if data_dir is None or not os.access(data_dir, os.R_OK):
+            raise FileNotFoundError(f"Data directory {data_dir} not found or inaccessible.\n")
 
         alpha_zero = AlphaZero(model, optimizer, game, args)
         if flag == "sl":
