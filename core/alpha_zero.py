@@ -116,8 +116,11 @@ class AlphaZero:
         self.save_model(1, flag="sl")
         self.save_losses(1, pretraining_losses, flag="sl")
 
-    def reinforcement_learning(self, flag: str = "rl") -> None:
+    def reinforcement_learning(self, flag: str = "rl", pretraining_dir: str = None) -> None:
         """AlphaZero reinforcement learning loop"""
+        if flag != "rl" and pretraining_dir:
+            self.supervised_learning(pretraining_dir)
+
         for i in range(self.args["num_iterations"]):
             mem = []  # Memory for self-play data
             self.model.eval()  # Set model to evaluation mode
