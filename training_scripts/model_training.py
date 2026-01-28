@@ -61,7 +61,7 @@ class ModelTrainer:
         if flag == "sl":
             alpha_zero.supervised_learning(data_dir)
         else:
-            alpha_zero.reinforcement_learning(flag=flag, model_dir=model_dir)
+            alpha_zero.reinforcement_learning(flag=flag, pretraining_dir=data_dir)
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn", force=True)
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--flag",
         type=str,
-        choices=["rl", "sl"],
+        choices=["rl", "sl", "sl+rl"],
         default="rl",
         help="Reinforcement learning vs Supervised learning (default: reinforcement learning)",
     )
