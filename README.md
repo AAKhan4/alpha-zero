@@ -5,10 +5,10 @@ An end-to-end reinforcement learning framework for two-player games, combining s
 ## Motivation
 
 I was introduced to the game of Go by a friend and quickly became very interested in the game due to its simple rules yet complex nature.
-To learn the game & improve my skills I signed-up on various popular Go websites to play against bots & slowly learn the game, quickly realising that most of these platforms impose strict rate limits on gameplay vs bots. This led me to explore how such bots are trained & implemented. 
+To learn the game & improve my skills, I signed up for various popular Go websites to play against bots & slowly learn, quickly realising that most of these platforms impose strict rate limits on gameplay vs bots. This led me to explore how such bots are trained & implemented. 
 
 This project is a gap-year research-style exploration of modern reinforcement learning systems, focusing on self-play, Monte Carlo Tree Search, and neural network training pipelines.
-The primary objective is to design, implement, and evaluate an end-to-end game agent that learns through a combination of human data and self-play. First implemented Tic-Tac-Toe & Connect Four before moving on to more complex game of Go.
+The primary objective is to design, implement, and evaluate an end-to-end game agent that learns through a combination of human data and self-play. First implemented Tic-Tac-Toe & Connect Four before moving on to the more complex game of Go.
 
 Initially inspired by:
 - [AlphaZero from Scratch – Machine Learning Tutorial (YouTube)](https://www.youtube.com/watch?v=wuSQpLinRB4&t=14473s)
@@ -22,23 +22,23 @@ Initially inspired by:
 
 ### System Overview
 
-Human SGF Games
-      ↓
-Supervised Policy Pretraining
-      ↓
-Neural Network (Policy + Value)
-      ↓
-MCTS-Guided Self-Play
-      ↓
-Replay Buffer
-      ↓
-Iterative Training Loop
+Human SGF Games <br>
+&nbsp;&nbsp;&nbsp;&nbsp; ↓ <br>
+Supervised Policy Pretraining <br>
+&nbsp;&nbsp;&nbsp;&nbsp; ↓ <br>
+Neural Network (Policy + Value) <br>
+&nbsp;&nbsp;&nbsp;&nbsp; ↓ <br>
+MCTS-Guided Self-Play <br>
+&nbsp;&nbsp;&nbsp;&nbsp; ↓ <br>
+Replay Buffer <br>
+&nbsp;&nbsp;&nbsp;&nbsp; ↓ <br>
+Iterative Training Loop <br>
 
 The system iteratively generates its own training data through self-play and improves without relying on external evaluation engines.
 
 ### Key Concepts
 
-- **Supervised Pretraining:** The model policy (move probabilities) is trained on data extracted from human games samples.
+- **Supervised Pretraining:** The model policy (move probabilities) is trained on data extracted from human game samples.
   - Provides a better starting point for AlphaZero-style training for more complex games such as Go. Inspired by AlphaGo.
 - **Self-Play:** AlphaZero generates training data by playing games against itself using MCTS guided by the neural network.
 - **Training:** The ResNet model is trained on self-play data to predict policy (move probabilities) and value (expected outcome).
@@ -53,7 +53,7 @@ Monte Carlo Tree Search (MCTS) is a search algorithm used to make decisions in g
 
 2. **Expansion**: When a node is selected that is not fully expanded, it is expanded by creating child nodes for all valid actions. The neural network provides a policy (probability distribution over actions) to guide this expansion.
 
-3. **Simulation**: For expandable nodes, the neural network predicts the policy (move probabilities) and value (expected outcome) for the current state. This information is used to simulate the game further.
+3. **Simulation**: For expandable nodes, the neural network predicts the policy (move probabilities) and value (expected outcome) for the current state. This information is used to further simulate the game.
 
 4. **Backpropagation**: The result of the simulation (value) is propagated back up the tree, updating the visit counts and value estimates of all nodes along the path.
 
@@ -61,7 +61,7 @@ Monte Carlo Tree Search (MCTS) is a search algorithm used to make decisions in g
 
 Key features of this implementation:
 - **Neural Network Integration**: The ResNet model predicts both the policy (action probabilities) and value (expected outcome) for each state, enabling efficient and informed search.
-- **Parallelization**: MCTS is performed for multiple self-play games in parallel, leveraging batching for efficiency.
+- **Parallelisation**: MCTS is performed for multiple self-play games in parallel, leveraging batching for efficiency.
 - **Exploration Noise**: Dirichlet noise is added to the root node's policy during self-play to encourage exploration and prevent the model from overfitting to specific strategies.
 - **Tree Representation**: Each node in the tree represents a game state, storing visit counts, value estimates, and prior probabilities for actions.
 
@@ -113,9 +113,9 @@ alpha-zero/
 
 ## Game Engine
 
-All games built on shared `BaseGame` class, which provides a modular and extensible foundation for games. This design streamlines the implementation and facilitates easy addition of new games.
+All games are built on a shared `BaseGame` class that provides a modular, extensible foundation. This design streamlines implementation and makes it easy to add new games.
 
-All games store state information (current board, player, etc.) in `GameState`.
+All games store state information (e.g., the current board, player, etc.) in `GameState`.
 
 ### Go Engine & Rules
 
@@ -128,7 +128,7 @@ All games store state information (current board, player, etc.) in `GameState`.
 #### Design Decisions
 
 - 9×9 board chosen to balance strategic depth with computational feasibility.
-- Chinese area scoring used to simplify end-game evaluation.
+- Chinese area scoring is used to simplify end-game evaluation.
 
 ## State Representation
 
@@ -151,10 +151,10 @@ Evaluation of this pipeline is currently in progress.
 
 ## Current Status
 
-- Supervised pretraining implemented and functional
-- Self-play training loop implemented
-- Models can self-play and be evaluated programmatically
-- Evaluation experiments are currently being conducted
+- Supervised pretraining implemented and functional.
+- Self-play training loop implemented.
+- Models can self-play and be evaluated programmatically.
+- Evaluation experiments are currently being conducted.
 
 ## Evaluation Plan (In Progress)
 
