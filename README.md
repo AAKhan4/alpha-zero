@@ -75,7 +75,8 @@ alpha-zero/
     mcts/             # MCTS & ResNet
   data/               # Human gameplay data for Go (raw data, data parser & processed data)
   games/              # Game logic for BaseGame + Tic-Tac-Toe, Connect Four & Go
-  training_scripts/   # Scripts to run training, config & evaluation
+  training_scripts/   # Scripts to run model training & config
+  eval_scripts/       # Scripts to run evaluation of models
   models/             # Saved models and logs (not added to GitHub)
 ```
 
