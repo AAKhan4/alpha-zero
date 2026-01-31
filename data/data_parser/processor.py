@@ -78,6 +78,14 @@ class DataProcessor:
                     print(f"Invalid move in file {file_name}. Skipping rest of game.")
                     continue
 
+        for i in range(2):
+            # Act final moves as double pass to end the game
+            transforms = self.get_all_transforms(new_state, self.board_size)
+            for s, a in transforms:
+                all_states.append(self.game.get_encoded_state(s if i == 0 else -s))
+                all_actions.append(a)
+                all_values.append(0.5)  # Neutral value for pass
+
         states_array = np.array(all_states, dtype=np.int8)
         actions_array = np.array(all_actions, dtype=np.int8)
         values_array = np.array(all_values, dtype=np.float32)
