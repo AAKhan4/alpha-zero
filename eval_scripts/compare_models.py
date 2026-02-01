@@ -33,7 +33,6 @@ class ModelCompare():
         print(f"\nComparison completed in {int(hours)}h:{int(minutes)}m:{int(seconds)}s")
 
     def run(self, game: BaseGame, args: dict, m_1: str = None, m_2: str = None, num_games: int = 100):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}\n")
 
         m_vs_rand = None
@@ -54,8 +53,7 @@ class ModelCompare():
         else:
             results = self.play_games(game, model_1, model_2, args, num_games=num_games)
         
-        win_rate = results[1] / num_games * 100
-        print(f"Win Rate of {m_1} over {m_2}: {win_rate:.2f}%\n")
+        self.save_results(m_1, m_2, results)
     
     def play_games_vs_rand(self, game: BaseGame, model_1: ResNet, args: dict, num_games: int = 100):
         results = {1: 0, -1: 0, 0: 0}  # Initialize win/draw counters
@@ -96,7 +94,6 @@ class ModelCompare():
                 else:
                     results[0] += 1
 
-        print(f"Results Model 1 vs Model 2:\nModel 1 Wins: {results[1]}, Model 2 Wins: {results[-1]}, Draws: {results[0]}\n")
         return results
 
     def get_model(self, m: str, game: BaseGame, args: dict):
@@ -121,7 +118,7 @@ class ModelCompare():
     
     def get_model_action(self, game: BaseGame, model: ResNet, game_info: dict):
         policy, _ = model(
-            torch.tensor(game.get_encoded_state(game_info["state"]), device=model.device).unsqueeze(0)
+            torch.tensor(game.get_encoded_state(game_info["board"]), device=model.device).unsqueeze(0)
         )
         policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
         valid_actions = game.get_valid_actions(game_info)
@@ -142,6 +139,18 @@ class ModelCompare():
                 if terminal:
                     return val
         return 0  # Count draw if maxed moves & error reaching terminal state
+    
+    def save_results(self, model_1: str, model_2: str, results: dict):
+        results_dir = "./evaluation/compare_models"
+        os.makedirs(results_dir, exist_ok=True)
+        result_file = os.path.join(results_dir, f"{model_1}_vs_{model_2}_results.txt")
+        with open(result_file, "w") as f:
+            f.write(f"Results of {model_1} vs {model_2}:\n")
+            f.write(f"Model 1 Wins: {results[1]}\n")
+            f.write(f"Model 2 Wins: {results[-1]}\n")
+            f.write(f"Draws: {results[0]}\n")
+            f.write(f"Win Rate of {model_1} over {model_2}: {results[1] / sum(results.values()) * 100:.2f}%\n")
+        print(f"Results saved to {result_file}\n")
     
     
     def game_vs_rand_worker(self, game: BaseGame, model_1: ResNet, move_first: bool = False):
