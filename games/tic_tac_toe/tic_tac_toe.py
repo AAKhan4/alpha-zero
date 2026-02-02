@@ -52,6 +52,9 @@ class TicTacToe(BaseGame):
         game_info["board"] = -1 * game_info["board"]
         game_info["player"] *= -1
         return game_info
+    
+    def get_state_type(self):
+        return TicTacToeState
 
 class TicTacToeState(GameState):
     def __init__(self, game: BaseGame, player: int = 1):

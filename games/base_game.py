@@ -53,6 +53,9 @@ class BaseGame:
             encoded = np.swapaxes(encoded, 0, 1)  # (batch, channels, rows, cols)
         return encoded
     
+    def get_state_type(self):
+        return GameState
+    
 class GameState:
     def __init__(self, game: BaseGame, player: int = 1):
         self.game = game

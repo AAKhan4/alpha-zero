@@ -126,14 +126,17 @@ class Go(BaseGame):
 
         # Apply the action to the board if it's not a pass or resignation
         if action != self.action_size - 1 and action >= 0:
-            board.play(divmod(action, self.col_count), 'b' if player == 1 else 'w')
+            row, col = divmod(action, self.col_count)
+            board.play(row, col, 'b' if player == 1 else 'w')
 
         # Update last moves
         last_moves[str(player)] = action
+        game_info["action_count"] += 1
         if action == self.action_size - 1:  # Pass move
             return game_info
         if action < 0: # Resignation
             last_moves[str(player)] = self.action_size - 1  # Mark resignation as double pass for consistency
+            game_info["action_count"] += 1
             last_moves[str(-player)] = self.action_size - 1
             return game_info
 
@@ -178,13 +181,14 @@ class Go(BaseGame):
 
         # Adjust board perspective based on the current player
         game_info = game_state.copy()
-        len_game = len(game_info["action_seq"])
+        len_game = game_info["action_count"]
         game_info["player"] = 1 if len_game % 2 == 0 else -1
         game_info["board"] = game_info["board"] * game_info["player"]
-        game_info["captures"] = game_info["captures"] * game_info["player"]
         game_info["prev_state"] = game_info["prev_state"] * game_info["player"]
         return game_info
 
+    def get_state_type(self):
+        return GoState
 
 class GoState(GameState):
     def __init__(self, game: Go, player=1):
@@ -194,9 +198,10 @@ class GoState(GameState):
         self.last_moves: dict = {
             "1": None,
             "-1": None
-        },
+        }
         self.prev_state: np.ndarray = np.zeros((game.row_count, game.col_count), dtype=np.int8)
         self.game_board = boards.Board(game.row_count)
+        self.action_count: int = 0
     
     def get_info(self):
         '''Returns a dictionary containing the current state information.'''
@@ -205,7 +210,8 @@ class GoState(GameState):
             "player": self.player,
             "last_moves": self.last_moves.copy(),
             "prev_state": self.prev_state.copy(),
-            "game_board": self.game_board.copy()
+            "game_board": self.game_board.copy(),
+            "action_count": self.action_count
         }
     
     def update(self, game_info: dict):
@@ -215,3 +221,4 @@ class GoState(GameState):
         self.last_moves = game_info["last_moves"]
         self.prev_state = game_info["prev_state"]
         self.game_board = game_info["game_board"]
+        self.action_count = game_info["action_count"]
