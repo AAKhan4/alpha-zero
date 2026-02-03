@@ -1,14 +1,17 @@
 import numpy as np
 from games.base_game import BaseGame, GameState
 from sgfmill import boards
+import copy
 
 class Go(BaseGame):
-    def __init__(self, board_size=9, komi=6.5):
+    def __init__(self, board_size=9, komi=6.5, max_game_length=80):
         self.row_count = board_size
         self.col_count = board_size
         self.action_size = board_size * board_size + 1  # +1 for the pass move
         self.komi = komi
         self.empty_board = boards.Board(board_size)
+        self.colour_mapping = {1: 'b', -1: 'w', 0: None}
+        self.max_game_length = max_game_length
 
     def __repr__(self):
         return "Go"
@@ -115,19 +118,24 @@ class Go(BaseGame):
         valid_actions = self.get_valid_actions(game_info)
         return valid_actions[action] == 1
     
-    def get_next_state(self, game_state: dict, action: int) -> dict:
+    def get_next_state(self, game_info: dict, action: int) -> dict:
         '''Returns the next game state after applying the given action.'''
-
-        game_info = game_state.copy()
-        state: np.ndarray = game_info["board"].copy()
-        board: boards.Board = game_info["game_board"].copy()
-        last_moves: dict = game_info["last_moves"].copy()
+        state: np.ndarray = game_info["board"]
+        board: boards.Board = game_info["game_board"]
+        last_moves: dict = game_info["last_moves"]
         player: int = game_info["player"]
-
+    
         # Apply the action to the board if it's not a pass or resignation
         if action != self.action_size - 1 and action >= 0:
             row, col = divmod(action, self.col_count)
-            board.play(row, col, 'b' if player == 1 else 'w')
+            map = {'b': 1, 'w': -1, None: 0}
+            board_state = np.array([[map[c] for c in row] for row in board.board], dtype=np.int8) * player
+            if not np.array_equal(state, board_state):
+                raise ValueError("Game info state does not match the board state.")
+            if (self.is_valid_action(game_info, action)):
+                board.play(row, col, self.colour_mapping[player])
+            else:
+                raise ValueError(f"Invalid action {action} for player {player}")
 
         # Update last moves
         last_moves[str(player)] = action
@@ -142,14 +150,7 @@ class Go(BaseGame):
 
         game_info["last_moves"] = last_moves
         game_info["game_board"] = board
-
-        # Update the board state
-        mapping = {'b': 1, 'w': -1, None: 0}
-        new_state = np.array([[mapping[c] for c in row] for row in board.board], dtype=np.int8)
-        new_state *= player
-
         game_info["prev_state"] = state
-        game_info["board"] = new_state
 
         return game_info
 
@@ -159,7 +160,7 @@ class Go(BaseGame):
         board: boards.Board = game_info["game_board"]
         player: int = game_info["player"]
 
-        score = board.area_score(komi=self.komi) * player # Calc score based on perspective
+        score = (board.area_score() - self.komi) * player # Calc score based on perspective
 
         return score
 
@@ -168,12 +169,12 @@ class Go(BaseGame):
 
         last_moves: dict = game_info["last_moves"]
 
-        if not all(move == self.action_size - 1 for move in last_moves.values()):
+        if not all(move == self.action_size - 1 for move in last_moves.values()) and game_info["action_count"] < self.max_game_length:
             return 0, False  # Game ongoing
 
         score = self.check_win(game_info)
         if score is None:
-            return None, False  # Resignation
+            return None, True  # Resignation 
         return score, True  # Game over
 
     def change_perspective(self, game_state: dict) -> dict:
@@ -193,7 +194,6 @@ class Go(BaseGame):
 class GoState(GameState):
     def __init__(self, game: Go, player=1):
         super().__init__(game=game, player=player)
-        self.board: np.ndarray = game.get_initial_state()
         self.player: int = player
         self.last_moves: dict = {
             "1": None,
@@ -205,18 +205,18 @@ class GoState(GameState):
     
     def get_info(self):
         '''Returns a dictionary containing the current state information.'''
+        mapping = {'b': 1, 'w': -1, None: 0}
         return {
-            "board": self.board.copy(),
+            "board": np.array([[mapping[c] for c in row] for row in self.game_board.board], dtype=np.int8) * self.player,
             "player": self.player,
             "last_moves": self.last_moves.copy(),
             "prev_state": self.prev_state.copy(),
-            "game_board": self.game_board.copy(),
+            "game_board": copy.deepcopy(self.game_board),
             "action_count": self.action_count
         }
     
     def update(self, game_info: dict):
         '''Updates the current state with the provided game information.'''
-        self.board = game_info["board"]
         self.player = game_info["player"]
         self.last_moves = game_info["last_moves"]
         self.prev_state = game_info["prev_state"]

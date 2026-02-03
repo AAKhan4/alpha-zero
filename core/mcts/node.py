@@ -1,13 +1,14 @@
 # Represents a node in the Monte Carlo Tree Search (MCTS) tree
+import copy
 import numpy as np
-from games.base_game import BaseGame
+from games.base_game import BaseGame, GameState
 
 
 class Node:
-    def __init__(self, game: BaseGame, args: dict, state: dict, parent: 'Node' = None, action: int = None, prior: float = 0, visit_count: int = 0):
+    def __init__(self, game: BaseGame, args: dict, game_state: GameState, parent: 'Node' = None, action: int = None, prior: float = 0, visit_count: int = 0):
         self.game = game  # Game logic object
         self.args = args  # MCTS parameters (e.g., exploration constant)
-        self.info = state  # Current game state at this node
+        self.game_state: GameState = copy.deepcopy(game_state)  # Current game state at this node
         self.parent = parent  # Parent node in the tree
         self.action = action  # Action that led to this node
         self.prior = prior  # Prior probability of selecting this action
@@ -35,8 +36,12 @@ class Node:
     def expand(self, policy: np.ndarray):
         for action, prob in enumerate(policy):
             if prob > 0.0:  # Only expand actions with non-zero probability
-                child_state = self.game.get_next_state(self.info, action)  # Apply the action
-                child_state = self.game.change_perspective(child_state)  # Switch perspective
+                info = self.game_state.get_info()
+                new_state = self.game.get_next_state(info, action)  # Apply the action
+                new_state = self.game.change_perspective(new_state)  # Switch perspective
+
+                child_state = self.game.get_state_type()(game=self.game)
+                child_state.update(new_state)
 
                 # Create a new child node
                 child = Node(self.game, self.args, child_state, parent=self, action=action, prior=prob)

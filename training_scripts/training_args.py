@@ -7,7 +7,7 @@ class TrainingArgsBuilder:
             "num_searches": 80, # Number of MCTS simulations per move
             "c": 1.0, # Exploration constant for MCTS
             "num_iterations": 10, # Number of training iterations
-            "num_self_play": 100, # Number of self-play games per iteration
+            "num_self_play": 120, # Number of self-play games per iteration
             "max_parallel_games": 128, # Max parallel games during self-play
             "num_epochs": 7, # Training epochs per iteration
             "batch_size": 64, # Mini-batch size for training
@@ -28,9 +28,9 @@ class TrainingArgsBuilder:
     def build_args(self, game: BaseGame) -> dict:
         if game.__class__.__name__ == "ConnectFour":
             self.args.update({
-                "num_searches": 400,
-                "num_self_play": 600,
-                "c": 1.8,
+                "num_searches": 120,
+                "num_self_play": 200,
+                "c": 1.5,
                 "num_iterations": 12,
                 "num_epochs": 15,
                 "batch_size": 128,
@@ -42,18 +42,19 @@ class TrainingArgsBuilder:
             })
         elif game.__class__.__name__ == "Go":
             self.args.update({
-                "num_searches": 800,
-                "num_self_play": 1000,
-                "c": 2.0,
-                "num_iterations": 25,
-                "num_epochs": 20,
+                "num_searches": 200,
+                "num_self_play": 600,
+                "c": 1.8,
+                "num_iterations": 20,
+                "num_epochs": 15,
                 "batch_size": 256,
-                "temp_threshold": 15,
+                "temp_threshold": 12,
                 "temp_decay": 0.25,
                 "res_blocks": 12,
                 "channels": 192,
                 "lr": 0.0003,
-                "pretraining_epochs": 50
+                "pretraining_epochs": 50,
+                "max_parallel_games": 96,
             })
         elif game.__class__.__name__ == "TicTacToe":
             pass  # Use default args

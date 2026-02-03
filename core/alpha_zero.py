@@ -43,6 +43,9 @@ class AlphaZero:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Clear GPU memory
         
         # Return average loss for the epoch
         return float(np.mean(batch_losses)) if batch_losses else 0.0
@@ -74,6 +77,10 @@ class AlphaZero:
 
                 game_info = self.game.change_perspective(game_info)
                 spg.game_state.update(game_info)
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Clear GPU memory
+
         return ret_mem
 
     def train(self, mem: List[Tuple[np.ndarray, np.ndarray, float]]) -> float:
@@ -96,6 +103,9 @@ class AlphaZero:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Clear GPU memory
 
         # Return average loss for the epoch
         return float(np.mean(batch_losses)) if batch_losses else 0.0

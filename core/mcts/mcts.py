@@ -36,8 +36,7 @@ class MCTS:
 
         # Initialize root nodes for all parallel games
         for i, game in enumerate(games):
-            game_info = game.game_state.get_info()
-            game.root = Node(self.game, self.args, game_info, visit_count=0)
+            game.root = Node(self.game, self.args, game.game_state, visit_count=0)
             game.root.expand(policy[i])
 
         # Perform the specified number of MCTS searches
@@ -51,7 +50,7 @@ class MCTS:
                     node = node.select()  # Select the best child node
 
                 # Check if the selected node is terminal
-                val, terminal = self.game.is_terminal(node.info)
+                val, terminal = self.game.is_terminal(node.game_state.get_info())
                 val /= abs(val) if val != 0 else 1  # Normalize terminal value to [-1, 1]
 
                 if terminal:
@@ -63,7 +62,7 @@ class MCTS:
             # Collect all nodes that can be expanded
             if expandable_nodes:
                 # Get states for all expandable nodes
-                states = np.stack([node.info["board"] for node in expandable_nodes])
+                states = np.stack([node.game_state.get_info()["board"] for node in expandable_nodes])
                 # Get policy and value predictions for these states
                 policy, val = self.model(
                     torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
@@ -73,7 +72,7 @@ class MCTS:
 
 
                 # Mask invalid actions and normalize probabilities for all states
-                valid_actions = np.stack([self.game.get_valid_actions(node.info) for node in expandable_nodes])  # Batch valid actions
+                valid_actions = np.stack([self.game.get_valid_actions(node.game_state.get_info()) for node in expandable_nodes])  # Batch valid actions
                 policy *= valid_actions  # Mask invalid actions for all states
                 policy /= np.sum(policy, axis=1, keepdims=True) + 1e-8 # Normalize probabilities across actions
 
