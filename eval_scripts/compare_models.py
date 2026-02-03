@@ -159,7 +159,7 @@ class ModelCompare():
                         Go: GoState}
         game_state: GameState = state_map[type(game)]()
 
-        for _ in range(100): # Max moves to prevent infinite loops or long stalling games
+        for _ in range(80): # Max moves to prevent infinite loops or long stalling games
             game_info = game_state.get_info()
             if game_info["perspective"] == 1:
                 action = self.get_model_action(game, model_1, game_info)
@@ -184,7 +184,7 @@ class ModelCompare():
                      Go: GoState}
         game_state: GameState = state_map[type(game)]()
 
-        for _ in range(100): # Max moves to prevent infinite loops or long stalling games
+        for _ in range(80): # Max moves to prevent infinite loops or long stalling games
             game_info = game_state.get_info()
             if game_info["perspective"] == 1:
                 action = self.get_model_action(game, model_1, game_info)
