@@ -1,7 +1,6 @@
 import numpy as np
 from games.base_game import BaseGame, GameState
 from sgfmill import boards
-import copy
 
 class Go(BaseGame):
     def __init__(self, board_size=9, komi=6.5, max_game_length=70):
@@ -63,79 +62,69 @@ class Go(BaseGame):
 
         return group, liberties
 
-    def detect_suicide_moves(self, state: np.ndarray) -> np.ndarray:
-        '''Detects suicide moves on the board.'''
-        suicide_moves = np.zeros((self.row_count, self.col_count), dtype=np.int8)
+    def is_not_suicide(self, state: np.ndarray, r: int, c: int, player: int) -> bool:
+        state = state.copy()
+        state[r, c] = player
+        _, liberties = self.count_liberties(state, r, c)
+        return len(liberties) > 0
 
-        possible_moves = np.where(state == 0)
-
-        # Check each possible move for suicide
-        for r, c in zip(*possible_moves):
-            _, neighbors = self.get_neighbors(state, r, c)
-            if not any(neighbors == -1):
-                continue
-
-            temp_state = np.copy(state)
-            temp_state[r, c] = 1
-            _, liberties = self.count_liberties(temp_state, r, c)
-            if not liberties:
-                suicide_moves[r, c] = 1
-
-        return suicide_moves
-
-    def detect_ko(self, state: np.ndarray, prev_state: np.ndarray) -> np.ndarray:
-        '''Detects ko moves on the board.'''
-        ko_moves = np.zeros((self.row_count, self.col_count), dtype=np.int8)
-        if np.sum(np.where(prev_state != 0)) < 2:
-            return ko_moves
-
-        possible_ko_moves = np.where((state == 0) & (prev_state == 1))
-
-        # Check each possible ko move
-        for r, c in zip(*possible_ko_moves):
-            temp_state = np.copy(state)
-            temp_state[r, c] = 1
-            if np.array_equal(temp_state, prev_state):
-                ko_moves[r, c] = 1
-        return ko_moves
+    def is_not_ko(self, game_info: dict, r: int, c: int) -> bool:
+        if game_info["ko_position"] == (r, c):
+            return False
+        return True
 
     def get_valid_actions(self, game_info: dict) -> np.ndarray:
         '''Returns a numpy array indicating valid actions on the board.'''
         state: np.ndarray = game_info["board"]
-        prev_state: np.ndarray = game_info["prev_state"]
-        suicide_moves = self.detect_suicide_moves(state)
-        ko_moves = self.detect_ko(state, prev_state)
-        valid_actions = np.zeros(self.action_size, dtype=np.int8)
+        valid_actions: np.ndarray = np.where(state == 0)
+        mask = np.zeros(self.action_size)
+        [rs, cs] = valid_actions
+        mask[rs * self.col_count + cs] = 1
 
-        valid_actions[:-1] = (state.reshape(-1) == 0) & (suicide_moves.reshape(-1) == 0) & (ko_moves.reshape(-1) == 0)
-        valid_actions[-1] = 1  # Pass is always valid
-        return valid_actions
+        return mask
 
     def is_valid_action(self, game_info: dict, action: int) -> bool:
         '''Checks if a given action is valid based on the current game state.'''
         if action == self.row_count * self.col_count or action < 0:  # Pass move or resignation
             return True
-        valid_actions = self.get_valid_actions(game_info)
-        return valid_actions[action] == 1
+        r, c = divmod(action, self.col_count)
+        return (game_info["board"][r, c] == 0) and self.is_not_suicide(game_info["board"], r, c, game_info["player"]) and self.is_not_ko(game_info, r, c)
+    
+    def apply_move(self, state: np.ndarray, r: int, c: int, player: int) -> tuple[np.ndarray, list[list[int]]]:
+        state = state.copy()
+        state[r, c] = player
+        captured = []
+
+        for nr, nc in self.get_neighbors(state, r, c)[0]:
+            if state[nr, nc] == -player:
+                group, liberties = self.count_liberties(state, nr, nc)
+                if len(liberties) == 0:
+                    for gx, gy in group:
+                        state[gx, gy] = 0
+                    captured.extend(group)
+
+        return state, captured
     
     def get_next_state(self, game_info: dict, action: int) -> dict:
         '''Returns the next game state after applying the given action.'''
         state: np.ndarray = game_info["board"]
-        board: boards.Board = game_info["game_board"]
-        last_moves: dict = game_info["last_moves"]
+        last_moves: dict = game_info["last_moves"].copy()
         player: int = game_info["player"]
     
         # Apply the action to the board if it's not a pass or resignation
         if action != self.action_size - 1 and action >= 0:
-            row, col = divmod(action, self.col_count)
-            map = {'b': 1, 'w': -1, None: 0}
-            board_state = np.array([[map[c] for c in row] for row in board.board], dtype=np.int8) * player
-            if not np.array_equal(state, board_state):
-                raise ValueError("Game info state does not match the board state.")
-            if (self.is_valid_action(game_info, action)):
-                board.play(row, col, self.colour_mapping[player])
+            r,c = divmod(action, self.col_count)
+            new_state, captured = self.apply_move(state, r, c, player)
+
+            if len(captured) == 1:
+                gx, gy = captured[0]
+                _, liberties = self.count_liberties(new_state, r, c)
+                if len(liberties) == 1:
+                    ko_pos = (gx, gy)
+                else:
+                    ko_pos = None
             else:
-                raise ValueError(f"Invalid action {action} for player {player}")
+                ko_pos = None
 
         # Update last moves
         last_moves[str(player)] = action
@@ -148,19 +137,21 @@ class Go(BaseGame):
             last_moves[str(-player)] = self.action_size - 1
             return game_info
 
+        game_info["board"] = new_state
         game_info["last_moves"] = last_moves
-        game_info["game_board"] = board
-        game_info["prev_state"] = state
+        game_info["ko_position"] = ko_pos
 
         return game_info
 
     def check_win(self, game_info: dict) -> int | None:
         '''Calculates the score to determine the winner of the game.'''
 
-        board: boards.Board = game_info["game_board"]
+        board: np.ndarray = game_info["board"]
+        game_board = boards.Board(self.row_count)
+        game_board.board = np.vectorize(self.colour_mapping.get)(board)
         player: int = game_info["player"]
 
-        score = (board.area_score() - self.komi) * player # Calc score based on perspective
+        score = (game_board.area_score() - self.komi) * player # Calc score based on perspective
 
         return score
 
@@ -185,7 +176,6 @@ class Go(BaseGame):
         len_game = game_info["action_count"]
         game_info["player"] = 1 if len_game % 2 == 0 else -1
         game_info["board"] = game_info["board"] * game_info["player"]
-        game_info["prev_state"] = game_info["prev_state"] * game_info["player"]
         return game_info
 
     def get_state_type(self):
@@ -199,27 +189,24 @@ class GoState(GameState):
             "1": None,
             "-1": None
         }
-        self.prev_state: np.ndarray = np.zeros((game.row_count, game.col_count), dtype=np.int8)
-        self.game_board = boards.Board(game.row_count)
         self.action_count: int = 0
+        self.ko_position: tuple[int, int] | None = None
+        self.board = game.get_initial_state()
     
     def get_info(self):
         '''Returns a dictionary containing the current state information.'''
-        mapping = {'b': 1, 'w': -1, None: 0}
-        board_array: np.ndarray = np.vectorize(lambda c: mapping[c])(np.array(self.game_board.board))
         return {
-            "board": board_array.astype(np.int8) * self.player,
+            "board": self.board,
             "player": self.player,
             "last_moves": self.last_moves,
-            "prev_state": self.prev_state,
-            "game_board": self.game_board,
-            "action_count": self.action_count
+            "action_count": self.action_count,
+            "ko_position": self.ko_position
         }
     
     def update(self, game_info: dict):
         '''Updates the current state with the provided game information.'''
         self.player = game_info["player"]
         self.last_moves = game_info["last_moves"]
-        self.prev_state = game_info["prev_state"]
-        self.game_board = game_info["game_board"]
+        self.ko_position = game_info["ko_position"]
         self.action_count = game_info["action_count"]
+        self.board = game_info["board"]
