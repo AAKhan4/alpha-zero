@@ -17,7 +17,7 @@ class MCTS:
     # Performs MCTS for multiple self-play games in parallel
     @torch.no_grad()
     def search(self, games: list[SPG]) -> None:
-        # Get initial policy and value predictions from the model
+        '''Get initial policy and value predictions from the model'''
         states = np.stack([game.game_state.board for game in games])
         policy, _ = self.model(
             torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
@@ -28,11 +28,6 @@ class MCTS:
         policy = (1 - self.args["epsilon"]) * policy + self.args["epsilon"] * np.random.dirichlet(
             [self.args["alpha"]] * self.game.action_size, size=policy.shape[0]
         )
-
-        # Mask invalid actions and normalize probabilities for all states
-        valid_actions = np.stack([self.game.get_valid_actions(game.game_state.get_info()) for game in games])  # Batch valid actions
-        policy *= valid_actions  # Mask invalid actions for all states
-        policy /= np.sum(policy, axis=1, keepdims=True) + 1e-8 # Normalize probabilities across actions
 
         # Initialize root nodes for all parallel games
         for i, game in enumerate(games):
@@ -69,12 +64,6 @@ class MCTS:
                 )
                 policy = torch.softmax(policy, dim=1).cpu().numpy()  # Apply softmax to policy
                 val = val.cpu().numpy()  # Convert value tensor to numpy
-
-
-                # Mask invalid actions and normalize probabilities for all states
-                valid_actions = np.stack([self.game.get_valid_actions(node.game_state.get_info()) for node in expandable_nodes])  # Batch valid actions
-                policy *= valid_actions  # Mask invalid actions for all states
-                policy /= np.sum(policy, axis=1, keepdims=True) + 1e-8 # Normalize probabilities across actions
 
                 # Expand and backpropagate for all expandable nodes
                 for i, node in enumerate(expandable_nodes):

@@ -201,6 +201,7 @@ class AlphaZero:
 
         # Sample an action based on MCTS probabilities and temperature
         action_probs = mcts_probs ** (1 / temp)
+        action_probs *= self.game.get_valid_actions({"board": state})  # Mask invalid actions
         action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
         return np.random.choice(self.game.action_size, p=action_probs)
 

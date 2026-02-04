@@ -16,47 +16,54 @@ class Node:
         self.visit_count = visit_count  # Number of times this node was visited
         self.value_sum = 0.0  # Cumulative value from simulations
 
-    # Checks if all valid actions have been expanded into child nodes
     def is_fully_expanded(self) -> bool:
+        '''Returns True if the node has any children.'''
         return len(self.children) > 0
 
-    # Selects the child node with the highest Upper Confidence Bound (UCB) score
     def select(self) -> 'Node':
+        '''Selects the child node with the highest UCB score.'''
         # Use max with a key function to find the child with the highest UCB score
         return max(self.children, key=self.get_ucb)
 
-    # Calculates the UCB score for a given child node
     def get_ucb(self, child: 'Node') -> float:
+        '''Calculates the UCB score for a child node.'''
         # Q-value: normalized value of the node (scaled to [-1, 1])
         q = (child.value_sum / child.visit_count) if child.visit_count > 0 else 0
         # UCB formula: Q + exploration term
         return q + self.args['c'] * np.sqrt(np.log(self.visit_count + 1) / (child.visit_count + 1)) * child.prior
 
-    # Expands the node by creating child nodes for valid actions based on the policy
     def expand(self, policy: np.ndarray):
+        '''Expands the node by creating child nodes for valid actions.'''
+        # Optional: restrict expansion to top-K actions
         if policy.size > 20:
-            # Set policy to 0 for all actions not in the top 10 probabilities
-            # This focuses expansion on the most promising actions, and massively reduces the number of children & MCTS cost
-            top_10 = np.argsort(policy)[-10:]
-            mask = np.zeros_like(policy, dtype=bool)
-            mask[top_10] = True
-            policy = policy * mask
+            top_k = 20
+            top_actions = np.argsort(policy)[-top_k:]
+        else:
+            top_actions = np.nonzero(policy)[0]
 
-        for action, prob in enumerate(policy):
-            if prob > 0.0:  # Only expand actions with non-zero probability
-                info = self.game_state.get_info()
-                new_state = self.game.get_next_state(info, action)  # Apply the action
-                new_state = self.game.change_perspective(new_state)  # Switch perspective
+        for action in top_actions:
+            prob = policy[action]
+            if prob <= 0:
+                continue
 
-                child_state = self.game.get_state_type()(game=self.game)
-                child_state.update(new_state)
+            info = self.game_state.get_info()
 
-                # Create a new child node
-                child = Node(self.game, self.args, child_state, parent=self, action=action, prior=prob)
-                self.children.append(child)
+            if not self.game.is_valid_action(info, action):
+                continue
 
-    # Updates the node and its ancestors with the result of a simulation
+            # Apply move
+            next_info = self.game.get_next_state(info, action)
+            next_info = self.game.change_perspective(next_info)
+
+            child_state = self.game.get_state_type()(game=self.game)
+            child_state.update(next_info)
+
+            child = Node(game=self.game, args=self.args, game_state=child_state, parent=self, action=action, prior=prob)
+
+            self.children.append(child)
+
     def backpropagate(self, value: float) -> None:
+        '''Backpropagates the simulation result up the tree.'''
         self.visit_count += 1  # Increment visit count
         self.value_sum += value  # Add the simulation value to the cumulative sum
 
