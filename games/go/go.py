@@ -4,7 +4,7 @@ from sgfmill import boards
 import copy
 
 class Go(BaseGame):
-    def __init__(self, board_size=9, komi=6.5, max_game_length=80):
+    def __init__(self, board_size=9, komi=6.5, max_game_length=70):
         self.row_count = board_size
         self.col_count = board_size
         self.action_size = board_size * board_size + 1  # +1 for the pass move
@@ -169,7 +169,7 @@ class Go(BaseGame):
 
         last_moves: dict = game_info["last_moves"]
 
-        if not all(move == self.action_size - 1 for move in last_moves.values()) and game_info["action_count"] < self.max_game_length:
+        if (not all(move == self.action_size - 1 for move in last_moves.values())) and game_info["action_count"] < self.max_game_length:
             return 0, False  # Game ongoing
 
         score = self.check_win(game_info)
@@ -206,12 +206,13 @@ class GoState(GameState):
     def get_info(self):
         '''Returns a dictionary containing the current state information.'''
         mapping = {'b': 1, 'w': -1, None: 0}
+        board_array: np.ndarray = np.vectorize(lambda c: mapping[c])(np.array(self.game_board.board))
         return {
-            "board": np.array([[mapping[c] for c in row] for row in self.game_board.board], dtype=np.int8) * self.player,
+            "board": board_array.astype(np.int8) * self.player,
             "player": self.player,
-            "last_moves": self.last_moves.copy(),
-            "prev_state": self.prev_state.copy(),
-            "game_board": copy.deepcopy(self.game_board),
+            "last_moves": self.last_moves,
+            "prev_state": self.prev_state,
+            "game_board": self.game_board,
             "action_count": self.action_count
         }
     

@@ -5,7 +5,7 @@ class TrainingArgsBuilder:
     def __init__(self, game: BaseGame):
         self.args = {
             "num_searches": 80, # Number of MCTS simulations per move
-            "c": 1.0, # Exploration constant for MCTS
+            "c": 1.2, # Exploration constant for MCTS
             "num_iterations": 10, # Number of training iterations
             "num_self_play": 120, # Number of self-play games per iteration
             "max_parallel_games": 128, # Max parallel games during self-play
@@ -42,19 +42,19 @@ class TrainingArgsBuilder:
             })
         elif game.__class__.__name__ == "Go":
             self.args.update({
-                "num_searches": 200,
-                "num_self_play": 600,
-                "c": 1.8,
+                "num_searches": 100,
+                "num_self_play": 200,
+                "c": 1.2,
                 "num_iterations": 20,
-                "num_epochs": 15,
+                "num_epochs": 10,
                 "batch_size": 256,
-                "temp_threshold": 12,
-                "temp_decay": 0.25,
+                "temp_threshold": 20,
+                "temp_decay": 0.2,
                 "res_blocks": 12,
-                "channels": 192,
+                "channels": 128,
                 "lr": 0.0003,
                 "pretraining_epochs": 50,
-                "max_parallel_games": 96,
+                "max_parallel_games": 64
             })
         elif game.__class__.__name__ == "TicTacToe":
             pass  # Use default args

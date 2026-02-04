@@ -34,6 +34,14 @@ class Node:
 
     # Expands the node by creating child nodes for valid actions based on the policy
     def expand(self, policy: np.ndarray):
+        if policy.size > 20:
+            # Set policy to 0 for all actions not in the top 10 probabilities
+            # This focuses expansion on the most promising actions, and massively reduces the number of children & MCTS cost
+            top_10 = np.argsort(policy)[-10:]
+            mask = np.zeros_like(policy, dtype=bool)
+            mask[top_10] = True
+            policy = policy * mask
+
         for action, prob in enumerate(policy):
             if prob > 0.0:  # Only expand actions with non-zero probability
                 info = self.game_state.get_info()
