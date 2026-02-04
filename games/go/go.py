@@ -148,7 +148,11 @@ class Go(BaseGame):
 
         board: np.ndarray = game_info["board"]
         game_board = boards.Board(self.row_count)
-        game_board.board = np.vectorize(self.colour_mapping.get)(board)
+        for r in range(self.row_count):
+            for c in range(self.col_count):
+                stone = self.colour_mapping[board[r, c]]
+                if stone is not None:
+                    game_board.play(r, c, stone)
         player: int = game_info["player"]
 
         score = (game_board.area_score() - self.komi) * player # Calc score based on perspective

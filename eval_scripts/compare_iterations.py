@@ -97,16 +97,18 @@ class IterationCompare():
             torch.tensor(game.get_encoded_state(game_info["board"]), device=model.device).unsqueeze(0)
         )
         policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
-        valid_actions = game.get_valid_actions(game_info)
-        policy *= valid_actions
-        policy = policy ** 5  # Boost probabilities to favor higher ones
+        policy = policy ** 2  # Boost probabilities to favor higher ones
         policy /= np.sum(policy) if np.sum(policy) > 0 else 1
-        action = np.random.choice(len(policy), p=policy)  # Sample action based on policy
+        action = None
+        while action is None or not game.is_valid_action(game_info, action):
+            action = np.random.choice(len(policy), p=policy)  # Sample action based on policy
         return action
     
     def get_random_action(self, game: BaseGame, game_info: dict):
         valid_actions = game.get_valid_actions(game_info)
-        action = np.random.choice(np.where(valid_actions == 1)[0])
+        action = None
+        while action is None or not game.is_valid_action(game_info, action):
+            action = np.random.choice(np.where(valid_actions == 1)[0])
         return action
     
     def handle_non_terminal(self, game: BaseGame, game_state: GameState):
@@ -153,7 +155,7 @@ class IterationCompare():
                      Go: GoState}
         game_state: GameState = state_map[type(game)]()
 
-        for _ in range(80): # Max moves to prevent infinite loops or long stalling games
+        for _ in range(70): # Max moves to prevent infinite loops or long stalling games
             game_info = game_state.get_info()
             if (game_info["perspective"] == 1) ^ flip_res:
                 action = self.get_model_action(game, model, game_info)
