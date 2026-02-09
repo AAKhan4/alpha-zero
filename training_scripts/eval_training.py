@@ -9,7 +9,6 @@ import argparse
 
 def plot_losses(game: str, flag: str):
     game = Go() if game.lower() == "go" else TicTacToe() if game.lower() == "tic_tac_toe" else ConnectFour()
-    flag = "sl" if flag.lower() == "sl" else "rl"
     args_builder = TrainingArgsBuilder(game)
     args = args_builder.build_args(game)
 
@@ -41,7 +40,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", type=str, required=True, help="The game to plot losses for (e.g., 'go' or 'tic_tac_toe').")
-    parser.add_argument("--flag", type=str, required=True, help="The training flag (e.g., 'sl' or 'rl').")
+    parser.add_argument("--flag", type=str, choices=["sl", "rl", "sl+rl"], required=True, help="The training flag (e.g., 'sl' or 'rl').")
 
     args = parser.parse_args()
     plot_losses(game=args.game, flag=args.flag)

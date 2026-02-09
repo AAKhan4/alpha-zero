@@ -31,7 +31,7 @@ class MCTS:
 
         # Initialize root nodes for all parallel games
         for i, game in enumerate(games):
-            game.root = Node(self.game, self.args, game.game_state, visit_count=0)
+            game.root = Node(self.game, self.args, game.game_state)
             game.root.expand(policy[i])
 
         # Perform the specified number of MCTS searches

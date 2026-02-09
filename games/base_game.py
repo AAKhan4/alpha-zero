@@ -6,6 +6,7 @@ class BaseGame:
         self.row_count = None
         self.col_count = None
         self.action_size = None
+        self.can_pass = False  # Whether the game allows a "pass" action
 
     def __repr__(self):
         raise NotImplementedError

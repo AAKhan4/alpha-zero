@@ -11,6 +11,7 @@ class Go(BaseGame):
         self.empty_board = boards.Board(board_size)
         self.colour_mapping = {1: 'b', -1: 'w', 0: None}
         self.max_game_length = max_game_length
+        self.can_pass = True  # Go allows a "pass" action
 
     def __repr__(self):
         return "Go"
@@ -76,16 +77,16 @@ class Go(BaseGame):
     def get_valid_actions(self, game_info: dict) -> np.ndarray:
         '''Returns a numpy array indicating valid actions on the board.'''
         state: np.ndarray = game_info["board"]
-        valid_actions: np.ndarray = np.where(state == 0)
-        mask = np.zeros(self.action_size)
-        [rs, cs] = valid_actions
-        mask[rs * self.col_count + cs] = 1
+        [r, c] = np.where(state == 0)
+        mask = np.zeros(self.action_size, dtype=np.int8)
+        mask[(r * self.col_count) + c] = 1
+        mask[-1] = 1
 
         return mask
 
     def is_valid_action(self, game_info: dict, action: int) -> bool:
         '''Checks if a given action is valid based on the current game state.'''
-        if action == self.row_count * self.col_count or action < 0:  # Pass move or resignation
+        if (action == self.action_size-1) or (action < 0):  # Pass move or resignation
             return True
         r, c = divmod(action, self.col_count)
         return (game_info["board"][r, c] == 0) and self.is_not_suicide(game_info["board"], r, c, game_info["player"]) and self.is_not_ko(game_info, r, c)
@@ -153,9 +154,9 @@ class Go(BaseGame):
                 stone = self.colour_mapping[board[r, c]]
                 if stone is not None:
                     game_board.play(r, c, stone)
-        player: int = game_info["player"]
 
-        score = (game_board.area_score() - self.komi) * player # Calc score based on perspective
+        player: int = game_info["player"]
+        score = (game_board.area_score() - self.komi) * player  # Calc score based on perspective
 
         return score
 

@@ -65,7 +65,7 @@ class AlphaZero:
                 mcts_probs = self.calc_mcts_probs(spg)  # Compute MCTS probabilities
                 spg.mem.append((game_info["board"], mcts_probs, game_info["player"]))  # Store state, probs, player
 
-                action = self.sample_action(mcts_probs, game_info["board"])  # Sample action based on MCTS probabilities
+                action = self.sample_action(mcts_probs, game_info)  # Sample action based on MCTS probabilities
                 game_info = self.game.get_next_state(game_info, action)
                 val, terminal = self.game.is_terminal(game_info)
                 val /= abs(val) if val != 0 else 1  # Normalize value
@@ -159,6 +159,8 @@ class AlphaZero:
                     sp_args_batch["args"]["num_parallel_games"] = min(batch_size, self.args["max_parallel_games"])
                     batch_args.append(sp_args_batch)
 
+            print(f"Starting self-play with {len(batch_args)} batches of games...")
+
             with torch.no_grad():
                 with multiprocessing.Pool(processes=self.args["num_workers"]) as pool:
                     results = []
@@ -168,6 +170,8 @@ class AlphaZero:
                             results.append(batch)
                             pbar.update(1)
                     mem = [item for sublist in results for item in sublist]
+
+            print(f"Self-play completed with {len(mem)} samples.\n")
 
             self.model.train()  # Set model to training mode
             epoch_losses = []
@@ -187,21 +191,24 @@ class AlphaZero:
     def calc_mcts_probs(self, spg: SPG) -> np.ndarray:
         """Compute MCTS probabilities for actions"""
         mcts_probs = np.zeros(self.game.action_size)
+        if not spg.root.children:
+            raise ValueError("MCTS root node has no children to calculate probabilities from.")
         for child in spg.root.children:
             mcts_probs[child.action] = child.visit_count
         return mcts_probs / np.sum(mcts_probs)
 
-    def sample_action(self, mcts_probs: np.ndarray, state: np.ndarray) -> int:
+    def sample_action(self, mcts_probs: np.ndarray, game_info: dict) -> int:
         """Sample an action based on MCTS probabilities and temperature"""
         temp = self.args["init_temperature"]
         if temp > 0.1:
-            num_moves = np.sum(state != 0)
+            num_moves = np.sum(game_info["board"] != 0)
             temp = temp - self.args["temp_decay"] * (num_moves // self.args["temp_threshold"])
         temp = max(temp, 0.1)  # Ensure temperature doesn't go below 0.1
 
         # Sample an action based on MCTS probabilities and temperature
+        if np.any(np.isnan(mcts_probs)):
+            raise ValueError("MCTS probabilities contain NaN values: current probs: {}".format(mcts_probs))
         action_probs = mcts_probs ** (1 / temp)
-        action_probs *= self.game.get_valid_actions({"board": state})  # Mask invalid actions
         action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
         return np.random.choice(self.game.action_size, p=action_probs)
 
