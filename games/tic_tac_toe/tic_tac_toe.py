@@ -29,8 +29,6 @@ class TicTacToe(BaseGame):
     
     def check_win(self, game_info: dict) -> int | None:
         board = game_info["board"]
-        if np.any(board == 0):
-            return None  # Game is still ongoing
 
         # Check rows and columns
         for i in range(3):
@@ -45,6 +43,8 @@ class TicTacToe(BaseGame):
             return board[0, 0]
         if abs(diag2) == 3:
             return board[0, 2]
+        if np.any(board == 0):
+            return None  # Game is still ongoing
         return 0  # Draw
     
     def change_perspective(self, game_info):
