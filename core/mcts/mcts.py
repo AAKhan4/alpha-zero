@@ -18,21 +18,11 @@ class MCTS:
     @torch.no_grad()
     def search(self, games: list[SPG]) -> None:
         '''Get initial policy and value predictions from the model'''
-        states = np.stack([game.game_state.board for game in games])
-        policy, _ = self.model(
-            torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
-        )
-        policy = torch.softmax(policy, dim=1).cpu().numpy()  # Apply softmax to get probabilities
 
-        # Add Dirichlet noise for exploration
-        policy = (1 - self.args["epsilon"]) * policy + self.args["epsilon"] * np.random.dirichlet(
-            [self.args["alpha"]] * self.game.action_size, size=policy.shape[0]
-        )
-
-        # Initialize root nodes for all parallel games
+        # Initialize root nodes for all parallel games if not already initialized
         for i, game in enumerate(games):
-            game.root = Node(self.game, self.args, game.game_state)
-            game.root.expand(policy[i])
+            if not game.root:
+                game.root = Node(self.game, self.args, game.game_state)
 
         # Perform the specified number of MCTS searches
         for _ in range(self.args["num_searches"]):
@@ -49,7 +39,6 @@ class MCTS:
                 val /= abs(val) if val != 0 else 1  # Normalize terminal value to [-1, 1]
 
                 if terminal:
-                    # If terminal, backpropagate the result
                     node.backpropagate(val)
                 else:
                     expandable_nodes.append(node)
@@ -63,7 +52,7 @@ class MCTS:
                     torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
                 )
                 policy = torch.softmax(policy, dim=1).cpu().numpy()  # Apply softmax to policy
-                val = val.cpu().numpy()  # Convert value tensor to numpy
+                val = val.cpu().numpy()  # Get value predictions as numpy array
 
                 # Expand and backpropagate for all expandable nodes
                 for i, node in enumerate(expandable_nodes):

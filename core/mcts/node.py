@@ -3,9 +3,12 @@ import copy
 import numpy as np
 from games.base_game import BaseGame, GameState
 
+MAX_BRANCHING_FACTOR = 10  # Maximum number of child nodes to expand per node if available valid actions exceed this number
+MAX_BRANCHING_FACTOR = 20  # Maximum number of child nodes to expand per node
+MAX_ROOT_EXPANSION = 30  # Maximum number of child nodes to expand for the root node
 
 class Node:
-    def __init__(self, game: BaseGame, args: dict, game_state: GameState, parent: 'Node' = None, action: int = None, prior: float = 0, visit_count: int = 1):
+    def __init__(self, game: BaseGame, args: dict, game_state: GameState, parent: 'Node' = None, action: int = None, prior: float = 0, visit_count: int = 0):
         self.game = game  # Game logic object
         self.args = args  # MCTS parameters (e.g., exploration constant)
         self.game_state: GameState = copy.deepcopy(game_state)  # Current game state at this node
@@ -19,7 +22,9 @@ class Node:
 
     def is_fully_expanded(self) -> bool:
         '''Returns True if the node has any children.'''
-        return len(self.children) > 0
+        valid_actions = self.game.get_valid_actions(self.game_state.get_info()).sum()
+        max_expansion = MAX_ROOT_EXPANSION if self.depth == 0 else MAX_BRANCHING_FACTOR
+        return len(self.children) > 0 and len(self.children) >= min(max_expansion, valid_actions)  # Consider node fully expanded if it has at least 20 children or all valid actions are expanded
 
     def select(self) -> 'Node':
         '''Selects the child node with the highest UCB score.'''
@@ -29,15 +34,16 @@ class Node:
     def get_ucb(self, child: 'Node') -> float:
         '''Calculates the UCB score for a child node.'''
         # Q-value: normalized value of the node (scaled to [-1, 1])
-        q = (child.value_sum / child.visit_count)
+        q = 1 if (child.visit_count == 0) else 1 - (child.value_sum / child.visit_count)
         # UCB formula: Q + exploration term
-        return q + (self.args['c'] * child.prior * (np.sqrt(np.log(self.visit_count) / (child.visit_count))))
+        return q + (self.args['c'] * child.prior * np.sqrt(self.visit_count + 1) / (1 + child.visit_count))
 
-    def expand(self, policy: np.ndarray):
-        '''Expands the node by creating child nodes for valid actions.'''
-        # Optional: restrict expansion to top-K actions
-        k = max(10, 20 - self.depth)  # Limit to top-K actions for expansion
-        info = self.game_state.get_info()
+    def get_top_actions(self, policy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        '''Returns the indices of the top-k actions based on the policy probabilities.'''
+        k = max(MAX_BRANCHING_FACTOR, MAX_BRANCHING_FACTOR - self.depth)  # Limit to top-K actions for expansion
+        if self.depth == 0:
+            k = MAX_ROOT_EXPANSION # Expand more actions at the start for better exploration
+
         top_actions = np.argsort(policy)[::-1]  # Get indices of actions sorted in descending order
         if policy.size > k:
             top_actions = top_actions[:k]  # Get indices of actions sorted in descending order for top k
@@ -45,13 +51,22 @@ class Node:
             policy[self.game.action_size-1] += 0.001  # Slightly increase the probability of the "pass" action if it's not already in the top actions
             top_actions[-1] = self.game.action_size-1  # Ensure the "pass" action is included in top actions
             policy = policy / np.sum(policy)  # Re-normalize the policy after adjustment
+        
+        return policy, top_actions
 
+    def expand(self, policy: np.ndarray):
+        '''Expands the node by creating child nodes for valid actions.'''
+        # Optional: restrict expansion to top-K actions
+        policy, top_actions = self.get_top_actions(policy)
+
+        info = self.game_state.get_info()
+
+        existing_children = set([child.action for child in self.children])  # Get actions of existing children to avoid duplicates
         for action in top_actions:
             prob = policy[action]
-            if prob <= 0 or not self.game.is_valid_action(info, action):
-                continue  # Skip actions with zero probability
-
-            # Apply move
+            if prob <= 0 or not self.game.is_valid_action(info, action) or action in existing_children:
+                continue  # Skip actions with zero probability or already existing children
+            # Apply move to get the next game state
             next_info = self.game.get_next_state(info, action)
             next_info = self.game.change_perspective(next_info)
             child_state = self.game.get_state_type()(game=self.game)
@@ -59,15 +74,13 @@ class Node:
             child = Node(game=self.game, args=self.args, game_state=child_state, parent=self, action=action, prior=prob)
 
             self.children.append(child)
+            existing_children.add(action)  # Add action to existing children set to prevent duplicates
 
     def backpropagate(self, value: float) -> None:
         '''Backpropagates the simulation result up the tree.'''
         self.visit_count += 1  # Increment visit count
         self.value_sum += value  # Add the simulation value to the cumulative sum
 
-        # Flip the value for the opponent's perspective
-        value = self.game.get_opponent_val(value)
-
         # Recursively backpropagate to the parent node
         if self.parent is not None:
-            self.parent.backpropagate(value)
+            self.parent.backpropagate(self.game.get_opponent_val(value))  # Flip value for the opponent
