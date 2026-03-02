@@ -36,6 +36,23 @@ def plot_losses(game: str, flag: str):
     plt.grid(True)
     plt.show()
 
+    # Plot average final loss at last iteration
+    final_losses = []
+    iterations = []
+    for iteration, losses in all_losses:
+        if losses:
+            final_losses.append(losses[-1])
+            iterations.append(iteration)
+    
+    if final_losses:
+        plt.figure()
+        plt.plot(iterations, final_losses, marker='o', linestyle='-')
+        plt.xlabel("Iteration")
+        plt.ylabel("Final Loss")
+        plt.title("Final Loss at Last Epoch for Each Iteration")
+        plt.grid(True)
+        plt.show()
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
