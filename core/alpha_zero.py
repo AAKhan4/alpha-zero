@@ -7,11 +7,14 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from typing import List, Dict, Tuple
+from core.mcts.node import Node
 from core.spg import SPG
 from games.base_game import BaseGame
 import multiprocessing
 
 from core.mcts.res_net import ResNet
+
+REPLAY_BUFFER_SIZE = 2000  # Maximum size of the replay buffer to store self-play data
 
 
 class AlphaZero:
@@ -22,6 +25,7 @@ class AlphaZero:
         self.game = game
         self.args = args
         self.mcts = MCTS(game, args, model)
+        self.replay_buffer_size = args.get("replay_buffer_size", REPLAY_BUFFER_SIZE)
 
     def pretrain(self, data: List[Tuple[np.ndarray, np.ndarray, float]]) -> float:
         """Pretrain the model using human-gameplay data"""
@@ -31,13 +35,13 @@ class AlphaZero:
         for i in range(0, len(data), self.args["batch_size"]):
             # Process batches of training data
             batch = data[i:i + self.args["batch_size"]]
-            state, pol_targets, val_targets = zip(*batch)
-            state, pol_targets, val_targets = self.prepare_batch(state, pol_targets, val_targets)
+            state, action = zip(*batch)
+            state = torch.tensor(np.array(state), dtype=torch.float32, device=self.model.device)
             state = state.reshape((state.size(0), 3, self.game.row_count, self.game.col_count))  # Reshape for Go 9x9
 
             # Forward pass and compute loss
-            out_pol, out_val = self.model(state)
-            loss = self.calc_loss(out_pol, pol_targets, out_val, val_targets)
+            out_pol, _ = self.model(state)
+            loss = F.cross_entropy(out_pol, torch.tensor(action, dtype=torch.long, device=self.model.device))
             batch_losses.append(loss.item())
             # Backward pass and optimizer step
             self.optimizer.zero_grad()
@@ -59,25 +63,36 @@ class AlphaZero:
             # Conduct MCTS searches for all active games
             self.mcts.search(games)
 
-            for i in range(len(games) - 1, -1, -1):
+            for i in range(len(games))[::-1]:
                 spg = games[i]
                 game_info = spg.game_state.get_info()
                 mcts_probs = self.calc_mcts_probs(spg)  # Compute MCTS probabilities
-                spg.mem.append((game_info["board"], mcts_probs, game_info["player"]))  # Store state, probs, player
 
+                board_state = game_info["board"]  # Use original shape for compatibility with TicTacToe and ConnectFour
                 action = self.sample_action(mcts_probs, game_info)  # Sample action based on MCTS probabilities
+
+                spg.mem.append((board_state, mcts_probs, game_info["player"]))  # Store state, probs, player
+
                 game_info = self.game.get_next_state(game_info, action)
                 val, terminal = self.game.is_terminal(game_info)
-                val /= abs(val) if val != 0 else 1  # Normalize value
-
+                val /= abs(val) if val != 0 else 1  # Normalize value to [-1, 1]
                 if terminal:
                     # Backpropagate results and remove finished games
-                    self.backpropagate(spg, val, game_info["player"], ret_mem)  # CHECK IF CORRECT
+                    self.backpropagate(spg, game_info["player"], val, ret_mem)
                     games.pop(i)
+                else:
+                    game_info = self.game.change_perspective(game_info)
+                    spg.game_state.update(game_info)
 
-                game_info = self.game.change_perspective(game_info)
-                spg.game_state.update(game_info)
-            
+                temp = spg.root
+                spg.root = None  # Clear the root to save memory
+                for child in temp.children:
+                    if child.action == action:
+                        spg.root = child  # Move down the tree to the selected child
+                        spg.root.parent = None  # Detach the new root from its parent to save memory
+                        spg.root.depth = 0  # Reset depth for the new root
+                        break
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()  # Clear GPU memory
 
@@ -91,11 +106,12 @@ class AlphaZero:
         for i in range(0, len(mem), self.args["batch_size"]):
             # Process batches of training data
             batch = mem[i:i + self.args["batch_size"]]
-            state, pol_targets, val_targets = zip(*batch)
-            state, pol_targets, val_targets = self.prepare_batch(state, pol_targets, val_targets)
+            states, pol_targets, val_targets = zip(*batch)
+            states, pol_targets, val_targets = np.stack(states), np.stack(pol_targets), np.array(val_targets)
+            states, pol_targets, val_targets = self.prepare_batch(states, pol_targets, val_targets)
 
             # Forward pass and compute loss
-            out_pol, out_val = self.model(state)
+            out_pol, out_val = self.model(states)
             loss = self.calc_loss(out_pol, pol_targets, out_val, val_targets)
             batch_losses.append(loss.item())
 
@@ -117,20 +133,21 @@ class AlphaZero:
         pretraining_losses = []
 
         self.model.train()
-        for _ in tqdm(range(self.args["pretraining_epochs"]), desc="Supervised Training"):
+        for i in tqdm(range(self.args["pretraining_epochs"]), desc="Supervised Training"):
             avg_loss = self.pretrain(pretraining_data)
             pretraining_losses.append(avg_loss)
+            self.save_model(i, flag="sl")
+            self.save_losses(i, pretraining_losses, flag="sl")
 
         print(f"Supervised Training Final Loss: {avg_loss}\n")
 
-        self.save_model(1, flag="sl")
-        self.save_losses(1, pretraining_losses, flag="sl")
 
     def reinforcement_learning(self, flag: str = "rl", pretraining_dir: str = None) -> None:
         """AlphaZero reinforcement learning loop"""
         if flag != "rl" and pretraining_dir:
             self.supervised_learning(pretraining_dir)
 
+        replay_buffer = []  # Buffer to store self-play data for training
         for i in range(self.args["num_iterations"]):
             mem = []  # Memory for self-play data
             self.model.eval()  # Set model to evaluation mode
@@ -171,12 +188,15 @@ class AlphaZero:
                             pbar.update(1)
                     mem = [item for sublist in results for item in sublist]
 
-            print(f"Self-play completed with {len(mem)} samples.\n")
+            replay_buffer.extend(mem)  # Add new self-play data to the replay buffer
+            if len(replay_buffer) > self.replay_buffer_size:  # Limit replay buffer size
+                replay_buffer = replay_buffer[-self.replay_buffer_size:]
+            print(f"Self-play completed with {len(mem)} samples. Training on {len(replay_buffer)} samples.\n")
 
             self.model.train()  # Set model to training mode
             epoch_losses = []
             for _ in tqdm(range(self.args["num_epochs"]), desc="Training"):
-                avg_loss = self.train(mem)  # Train on self-play data
+                avg_loss = self.train(replay_buffer)  # Train on self-play data
                 epoch_losses.append(avg_loss)
 
             print(f"Current Loss: {avg_loss}\n")
@@ -193,47 +213,55 @@ class AlphaZero:
         mcts_probs = np.zeros(self.game.action_size)
         if not spg.root.children:
             raise ValueError("MCTS root node has no children to calculate probabilities from.")
+
         for child in spg.root.children:
-            mcts_probs[child.action] = child.visit_count
-        return mcts_probs / np.sum(mcts_probs)
+            mcts_probs[child.action] = child.visit_count  # Use visit counts as probabilities
+
+        # Normalize probabilities
+        total_visits = np.sum(mcts_probs)
+        mcts_probs = (mcts_probs / total_visits) if total_visits > 0 else np.ones_like(mcts_probs) / len(mcts_probs)
+
+        return mcts_probs
 
     def sample_action(self, mcts_probs: np.ndarray, game_info: dict) -> int:
         """Sample an action based on MCTS probabilities and temperature"""
         temp = self.args["init_temperature"]
-        if temp > 0.1:
-            num_moves = np.sum(game_info["board"] != 0)
-            temp = temp - self.args["temp_decay"] * (num_moves // self.args["temp_threshold"])
-        temp = max(temp, 0.1)  # Ensure temperature doesn't go below 0.1
+        if temp > self.args["temp_floor"]:
+            num_moves = np.sum(game_info["board"] != 0) if not game_info.get("action_count") else game_info["action_count"]
+            temp = temp - (self.args["temp_decay"] * (num_moves // self.args["temp_threshold"]))
+        temp = max(temp, self.args["temp_floor"])  # Ensure temperature doesn't go below temp_floor
 
         # Sample an action based on MCTS probabilities and temperature
         if np.any(np.isnan(mcts_probs)):
             raise ValueError("MCTS probabilities contain NaN values: current probs: {}".format(mcts_probs))
         action_probs = mcts_probs ** (1 / temp)
-        action_probs /= np.sum(action_probs) if np.sum(action_probs) > 0 else 1
+        sum_probs = np.sum(action_probs)
+        # Normalize probabilities
+        action_probs = (action_probs / sum_probs) if sum_probs > 0 else (np.ones_like(action_probs) / len(action_probs))
         return np.random.choice(self.game.action_size, p=action_probs)
 
-    def backpropagate(self, spg: SPG, val: float, player: int, ret_mem: List) -> None:
+    def backpropagate(self, spg: SPG, player: int, val: float, ret_mem: List) -> None:
         """Backpropagate game results to update memory"""
-        for hist_state, hist_probs, hist_player in spg.mem:
-            hist_outcome = val if hist_player == player else self.game.get_opponent_val(val)
-            ret_mem.append((
-                self.game.get_encoded_state(hist_state),
-                hist_probs,
-                hist_outcome
-            ))
+        for hist_state, hist_prob, hist_player in spg.mem:
+            out = val if hist_player == player else self.game.get_opponent_val(val)
+            ret_mem.append((hist_state, hist_prob, out))  # Store state, MCTS probabilities, and value from player's perspective
+            # print("Backprop: state: \n{}, prob: {}, player: {}, val: {}".format(hist_state, hist_prob, hist_player, out))
 
     def prepare_batch(self, state: np.ndarray, pol_targets: np.ndarray, val_targets: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Prepare batch data for training"""
-        state = torch.tensor(np.array(state), dtype=torch.float32, device=self.model.device)
-        pol_targets = torch.tensor(np.array(pol_targets), dtype=torch.float32, device=self.model.device)
-        val_targets = torch.tensor(np.array(val_targets).reshape(-1, 1), dtype=torch.float32, device=self.model.device)
+        state = torch.tensor(self.game.get_encoded_state(state), dtype=torch.float32, device=self.model.device)
+        pol_targets = torch.tensor(pol_targets, dtype=torch.float32, device=self.model.device)
+        val_targets = torch.tensor(val_targets.reshape(-1, 1), dtype=torch.float32, device=self.model.device)
         return state, pol_targets, val_targets
 
     def calc_loss(self, out_pol: torch.Tensor, pol_targets: torch.Tensor, out_val: torch.Tensor, val_targets: torch.Tensor) -> torch.Tensor:
         """Compute combined policy and value loss"""
-        policy_loss = F.kl_div(torch.log_softmax(out_pol, dim=1), pol_targets, reduction="batchmean")
+        pol_targets /= pol_targets.sum(dim=1, keepdim=True)  # Normalize policy targets
+        policy_loss = F.kl_div(torch.log_softmax(out_pol, dim=1), pol_targets, reduction="batchmean")  # KL divergence for policy loss
         value_loss = F.mse_loss(out_val, val_targets)
-        return (policy_loss + value_loss)
+        total_loss = policy_loss + value_loss  # Combine policy and value losses
+
+        return total_loss
 
     def save_model(self, iteration: int, flag: str = None) -> None:
         """Save model and optimizer state to disk"""
@@ -252,10 +280,9 @@ class AlphaZero:
     def prepare_pretraining_data(self, pretraining_dir: str) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         """Prepare pretraining data from the specified directory"""
         states = np.load(os.path.join(pretraining_dir, "states.npy"))
-        policies = np.load(os.path.join(pretraining_dir, "policies.npy"))
-        values = np.load(os.path.join(pretraining_dir, "values.npy"))
+        actions = np.load(os.path.join(pretraining_dir, "actions.npy"))
 
-        pretraining_data = list(zip(states, policies, values))
+        pretraining_data = list(zip(states, actions))
         return pretraining_data
 
 
