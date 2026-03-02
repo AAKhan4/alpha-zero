@@ -3,7 +3,7 @@ from games.base_game import BaseGame, GameState
 from sgfmill import boards
 
 class Go(BaseGame):
-    def __init__(self, board_size=9, komi=6.5, max_game_length=70):
+    def __init__(self, board_size=9, komi=3.5, max_game_length=70):
         self.row_count = board_size
         self.col_count = board_size
         self.action_size = board_size * board_size + 1  # +1 for the pass move
@@ -32,11 +32,45 @@ class Go(BaseGame):
 
         return neighbors_idx, np.array([state[x, y] for x, y in neighbors_idx])
 
-    def count_liberties(self, state: np.ndarray, r: int, c: int) -> tuple[list[list[int]], set[tuple[int, int]]]:
+    def get_surrounding_players(self, board: np.ndarray, group: list[tuple[int, int]]) -> set[int]:
+        '''Determines which players surround a group of stones.'''
+        surrounding_players = set()
+
+        for r, c in group:
+            _, neighbors_val = self.get_neighbors(board, r, c)
+            for val in neighbors_val:
+                if val != 0:
+                    surrounding_players.add(val)
+
+        return surrounding_players
+    
+    def get_region(self, game_info: dict, row: int, col: int) -> dict:
+        '''Returns the connected region of empty spaces and the players that surround it.'''
+        # Based on algorithm from SGFMill
+        spaces = set()
+        neighbouring_colours = set()
+        to_handle = set()
+        to_handle.add((row, col))
+        while to_handle:
+            point = to_handle.pop()
+            spaces.add(point)
+            r, c = point
+            neighbour_idx, neighbours = self.get_neighbors(game_info["board"], r, c)
+            for idx, neighbour in zip(neighbour_idx, neighbours):
+                r1, c1 = idx
+                if neighbour is None:
+                    if (r1, c1) not in spaces:
+                        to_handle.add((r1, c1))
+                else:
+                    neighbouring_colours.add(neighbour)
+        players = neighbouring_colours
+        return spaces, players, len(spaces)
+
+    def count_liberties(self, state: np.ndarray, r: int, c: int) -> tuple[set[tuple[int, int]], set[tuple[int, int]]]:
         '''Counts the liberties of the group of stones connected to the stone at (r, c).'''
         visited = np.zeros((self.row_count, self.col_count), dtype=bool)
         stack = [(r, c)]
-        group = [[r, c]]
+        group = set()
         player = state[r, c]
         liberties = set()
 
@@ -45,27 +79,20 @@ class Go(BaseGame):
             if visited[x, y]:
                 continue
             visited[x, y] = True
+            group.add((x, y))
 
             neighbors_idx, neighbors_val = self.get_neighbors(state, x, y)
-            
-            unmarked_neighbors = np.where(neighbors_val == 0)[0]
-            unmarked_neighbors = neighbors_idx[unmarked_neighbors]
-            liberties.update((nx, ny) for nx, ny in unmarked_neighbors)
-
-            adj_player_stones = np.where(neighbors_val == player)[0]
-            adj_player_stones = neighbors_idx[adj_player_stones] # Get coordinates of adjacent same-color stones
-            unvisited = ~np.isin(adj_player_stones, visited).all(axis=1)
-            adj_player_stones = adj_player_stones[unvisited]
-
-            for nx, ny in adj_player_stones:
-                stack.append((nx, ny))
-                group.append([nx, ny])
+            for (nx, ny), val in zip(neighbors_idx, neighbors_val):
+                if val == 0:
+                    liberties.add((nx, ny))
+                elif val == player and not visited[nx, ny]:
+                    stack.append((nx, ny))
 
         return group, liberties
 
-    def is_not_suicide(self, state: np.ndarray, r: int, c: int, player: int) -> bool:
+    def is_not_suicide(self, state: np.ndarray, r: int, c: int) -> bool:
         state = state.copy()
-        state[r, c] = player
+        state[r, c] = 1
         _, liberties = self.count_liberties(state, r, c)
         return len(liberties) > 0
 
@@ -89,15 +116,15 @@ class Go(BaseGame):
         if (action == self.action_size-1) or (action < 0):  # Pass move or resignation
             return True
         r, c = divmod(action, self.col_count)
-        return (game_info["board"][r, c] == 0) and self.is_not_suicide(game_info["board"], r, c, game_info["player"]) and self.is_not_ko(game_info, r, c)
+        return (game_info["board"][r, c] == 0) and self.is_not_suicide(game_info["board"], r, c) and self.is_not_ko(game_info, r, c)
     
-    def apply_move(self, state: np.ndarray, r: int, c: int, player: int) -> tuple[np.ndarray, list[list[int]]]:
+    def apply_move(self, state: np.ndarray, r: int, c: int) -> tuple[np.ndarray, list[list[int]]]:
         state = state.copy()
-        state[r, c] = player
+        state[r, c] = 1
         captured = []
 
         for nr, nc in self.get_neighbors(state, r, c)[0]:
-            if state[nr, nc] == -player:
+            if state[nr, nc] == -1:
                 group, liberties = self.count_liberties(state, nr, nc)
                 if len(liberties) == 0:
                     for gx, gy in group:
@@ -115,7 +142,7 @@ class Go(BaseGame):
         # Apply the action to the board if it's not a pass or resignation
         if action != self.action_size - 1 and action >= 0:
             r,c = divmod(action, self.col_count)
-            new_state, captured = self.apply_move(state, r, c, player)
+            new_state, captured = self.apply_move(state, r, c)
 
             if len(captured) == 1:
                 gx, gy = captured[0]
@@ -145,21 +172,32 @@ class Go(BaseGame):
         return game_info
 
     def check_win(self, game_info: dict) -> int | None:
-        '''Calculates the score to determine the winner of the game.'''
-
-        board: np.ndarray = game_info["board"]
-        game_board = boards.Board(self.row_count)
-        for r in range(self.row_count):
-            for c in range(self.col_count):
-                stone = self.colour_mapping[board[r, c]]
-                if stone is not None:
-                    game_board.play(r, c, stone)
-
-        player: int = game_info["player"]
-        score = (game_board.area_score() - self.komi) * player  # Calc score based on perspective
+        '''
+        Calculates the score to determine the winner of the game.
+        Returns score from perspective of current player.
+        '''
+        score = self.calc_score(game_info) - (game_info["player"] * self.komi)  # Calc score based on perspective
 
         return score
 
+    def calc_score(self, game_info: dict) -> int:
+        '''Calculates the score of the game from the perspective of the current player.'''
+        # Based on algorithm from SGFMill
+        score = 0
+        handled = set()
+        for row in range(self.row_count):
+            for col in range(self.col_count):
+                if game_info["board"][row, col] != 0:
+                    score += game_info["board"][row, col]  # Add points for occupied positions
+                    point = (row, col)
+                    if point in handled:
+                        continue
+                    region, players, size = self.get_region(game_info, row, col)
+            for player in players:
+                score += player * size  # Add points for controlled empty regions
+            handled.update(region)
+        return score
+    
     def is_terminal(self, game_info: dict) -> tuple[int | None, bool]:
         '''Determines if the game has reached a terminal state.'''
 
@@ -173,14 +211,13 @@ class Go(BaseGame):
             return None, True  # Resignation 
         return score, True  # Game over
 
-    def change_perspective(self, game_state: dict) -> dict:
+    def change_perspective(self, game_info: dict) -> dict:
         '''Changes the perspective of the game state to the current player.'''
 
         # Adjust board perspective based on the current player
-        game_info = game_state.copy()
-        len_game = game_info["action_count"]
-        game_info["player"] = 1 if len_game % 2 == 0 else -1
-        game_info["board"] = game_info["board"] * game_info["player"]
+        game_info = game_info.copy()
+        game_info["board"] *= -1  # Flip the board for the opponent's perspective
+        game_info["player"] *= -1  # Switch player perspective
         return game_info
 
     def get_state_type(self):
