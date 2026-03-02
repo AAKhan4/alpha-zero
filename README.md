@@ -59,11 +59,13 @@ Monte Carlo Tree Search (MCTS) is a search algorithm used to make decisions in g
 
 5. **Self-Play**: The root node's child with the highest visit count is selected as the next move, and the process repeats for subsequent game states.
 
-Key features of this implementation:
+Key features & considerations of this implementation:
 - **Neural Network Integration**: The ResNet model predicts both the policy (action probabilities) and value (expected outcome) for each state, enabling efficient and informed search.
 - **Parallelisation**: MCTS is performed for multiple self-play games in parallel, leveraging batching for efficiency.
 - **Exploration Noise**: Dirichlet noise is added to the root node's policy during self-play to encourage exploration and prevent the model from overfitting to specific strategies.
 - **Tree Representation**: Each node in the tree represents a game state, storing visit counts, value estimates, and prior probabilities for actions.
+- **Sub-tree Reuse**: After selecting an action during self-play, the corresponding child node becomes the new root for subsequent MCTS iterations, preserving prior search statistics and reducing redundant computation.
+- **Limited Expansion**: Expands top-K actions by policy probability, with K decreasing at deeper depths (root: 30 actions, deeper nodes: 10), reducing computation for large action spaces.
 
 This implementation ensures that the model learns by iteratively improving its policy and value predictions through self-play, guided by MCTS.
 
