@@ -25,7 +25,10 @@ class TicTacToe(BaseGame):
         row, col = divmod(action, self.col_count)
         new_state[row, col] = 1
         game_info["board"] = new_state
-        return game_info
+        return {
+            "board": new_state * -1,  # Flip the board for the opponent's perspective
+            "player": -game_info["player"]  # Switch player perspective
+        }
     
     def check_win(self, game_info: dict) -> int | None:
         board = game_info["board"]
@@ -46,12 +49,6 @@ class TicTacToe(BaseGame):
         if np.any(board == 0):
             return None  # Game is still ongoing
         return 0  # Draw
-    
-    def change_perspective(self, game_info):
-        game_info = game_info.copy()
-        game_info["board"] = -1 * game_info["board"]
-        game_info["player"] *= -1
-        return game_info
     
     def get_state_type(self):
         return TicTacToeState

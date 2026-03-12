@@ -1,15 +1,14 @@
 import numpy as np
+import sgfmill
 from games.base_game import BaseGame, GameState
 from sgfmill import boards
 
 class Go(BaseGame):
-    def __init__(self, board_size=9, komi=3.5, max_game_length=70):
+    def __init__(self, board_size=9, komi=2.5, max_game_length=70):
         self.row_count = board_size
         self.col_count = board_size
-        self.action_size = board_size * board_size + 1  # +1 for the pass move
+        self.action_size = (board_size * board_size) + 1  # +1 for the pass move
         self.komi = komi
-        self.empty_board = boards.Board(board_size)
-        self.colour_mapping = {1: 'b', -1: 'w', 0: None}
         self.max_game_length = max_game_length
         self.can_pass = True  # Go allows a "pass" action
 
@@ -44,7 +43,7 @@ class Go(BaseGame):
 
         return surrounding_players
     
-    def get_region(self, game_info: dict, row: int, col: int) -> dict:
+    def get_region(self, game_info: dict, row: int, col: int) -> tuple[set[tuple[int, int]], set[int], int]:
         '''Returns the connected region of empty spaces and the players that surround it.'''
         # Based on algorithm from SGFMill
         spaces = set()
@@ -63,7 +62,7 @@ class Go(BaseGame):
                         to_handle.add((r1, c1))
                 else:
                     neighbouring_colours.add(neighbour)
-        players = neighbouring_colours
+        players = neighbouring_colours if neighbouring_colours else set()
         return spaces, players, len(spaces)
 
     def count_liberties(self, state: np.ndarray, r: int, c: int) -> tuple[set[tuple[int, int]], set[tuple[int, int]]]:
@@ -89,14 +88,51 @@ class Go(BaseGame):
                     stack.append((nx, ny))
 
         return group, liberties
+    
+    def has_liberties(self, state: np.ndarray, r: int, c: int) -> bool:
+        '''Checks if the stone at (r, c) has any liberties.'''
+        visited = np.zeros((self.row_count, self.col_count), dtype=bool)
+        stack = [(r, c)]
+        group = set()
+        player = state[r, c]
+
+        while stack:
+            x, y = stack.pop()
+            if visited[x, y]:
+                continue
+            visited[x, y] = True
+            group.add((x, y))
+
+            neighbors_idx, neighbors_val = self.get_neighbors(state, x, y)
+            for (nx, ny), val in zip(neighbors_idx, neighbors_val):
+                if val == 0:
+                    return True  # Found a liberty, no need to continue
+                elif val == player and not visited[nx, ny]:
+                    stack.append((nx, ny))
+        return False  # No liberties found
 
     def is_not_suicide(self, state: np.ndarray, r: int, c: int) -> bool:
-        state = state.copy()
+        idx, neighbors = self.get_neighbors(state, r, c)
+        if np.any(neighbors == 0):
+            return True
         state[r, c] = 1
-        _, liberties = self.count_liberties(state, r, c)
-        return len(liberties) > 0
+        not_suicide = self.has_liberties(state, r, c)
+
+        # Check if the move captures any opponent groups
+        if not not_suicide:
+            opponent = -1
+            for (nr, nc), val in zip(idx, neighbors):
+                if val == opponent:
+                    if self.has_liberties(state, nr, nc):
+                        state[r, c] = 0
+                        return True
+
+        state[r, c] = 0
+        return not_suicide
 
     def is_not_ko(self, game_info: dict, r: int, c: int) -> bool:
+        if not game_info["ko_position"]:
+            return True
         if game_info["ko_position"] == (r, c):
             return False
         return True
@@ -116,10 +152,12 @@ class Go(BaseGame):
         if (action == self.action_size-1) or (action < 0):  # Pass move or resignation
             return True
         r, c = divmod(action, self.col_count)
-        return (game_info["board"][r, c] == 0) and self.is_not_suicide(game_info["board"], r, c) and self.is_not_ko(game_info, r, c)
+        return self.is_not_suicide(game_info["board"], r, c) and self.is_not_ko(game_info, r, c)
     
     def apply_move(self, state: np.ndarray, r: int, c: int) -> tuple[np.ndarray, list[list[int]]]:
         state = state.copy()
+        if ((r * self.col_count) + c) == self.action_size - 1:  # Pass move
+            return state, []
         state[r, c] = 1
         captured = []
 
@@ -140,7 +178,7 @@ class Go(BaseGame):
         player: int = game_info["player"]
     
         # Apply the action to the board if it's not a pass or resignation
-        if action != self.action_size - 1 and action >= 0:
+        if action >= 0:
             r,c = divmod(action, self.col_count)
             new_state, captured = self.apply_move(state, r, c)
 
@@ -153,23 +191,22 @@ class Go(BaseGame):
                     ko_pos = None
             else:
                 ko_pos = None
+        new_state = new_state * -1  # Flip the board for the opponent's perspective
 
         # Update last moves
         last_moves[str(player)] = action
-        game_info["action_count"] += 1
-        if action == self.action_size - 1:  # Pass move
-            return game_info
         if action < 0: # Resignation
             last_moves[str(player)] = self.action_size - 1  # Mark resignation as double pass for consistency
-            game_info["action_count"] += 1
             last_moves[str(-player)] = self.action_size - 1
             return game_info
 
-        game_info["board"] = new_state
-        game_info["last_moves"] = last_moves
-        game_info["ko_position"] = ko_pos
-
-        return game_info
+        return {
+            "board": new_state.copy(),
+            "player": -player,
+            "last_moves": last_moves.copy(),
+            "action_count": game_info["action_count"] + 1,
+            "ko_position": ko_pos
+        }
 
     def check_win(self, game_info: dict) -> int | None:
         '''
@@ -189,13 +226,14 @@ class Go(BaseGame):
             for col in range(self.col_count):
                 if game_info["board"][row, col] != 0:
                     score += game_info["board"][row, col]  # Add points for occupied positions
-                    point = (row, col)
-                    if point in handled:
-                        continue
-                    region, players, size = self.get_region(game_info, row, col)
-            for player in players:
-                score += player * size  # Add points for controlled empty regions
-            handled.update(region)
+                    continue
+                point = (row, col)
+                if point in handled:
+                    continue
+                region, players, size = self.get_region(game_info, row, col)
+                for player in players:
+                    score += player * size  # Add points for controlled empty regions
+                handled.update(region)
         return score
     
     def is_terminal(self, game_info: dict) -> tuple[int | None, bool]:
@@ -203,22 +241,13 @@ class Go(BaseGame):
 
         last_moves: dict = game_info["last_moves"]
 
-        if (not all(move == self.action_size - 1 for move in last_moves.values())) and game_info["action_count"] < self.max_game_length:
-            return 0, False  # Game ongoing
+        if game_info["action_count"] < self.max_game_length and not all(move == self.action_size - 1 for move in last_moves.values()):
+            return 0, False  # Game ends in a draw if both players pass or max game length is reached
 
         score = self.check_win(game_info)
         if score is None:
             return None, True  # Resignation 
         return score, True  # Game over
-
-    def change_perspective(self, game_info: dict) -> dict:
-        '''Changes the perspective of the game state to the current player.'''
-
-        # Adjust board perspective based on the current player
-        game_info = game_info.copy()
-        game_info["board"] *= -1  # Flip the board for the opponent's perspective
-        game_info["player"] *= -1  # Switch player perspective
-        return game_info
 
     def get_state_type(self):
         return GoState

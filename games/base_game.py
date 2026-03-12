@@ -27,9 +27,6 @@ class BaseGame:
     def check_win(self, game_info: dict) -> int | None:
         raise NotImplementedError
 
-    def change_perspective(self, game_info: dict) -> dict:
-        raise NotImplementedError
-
     def is_terminal(self, game_info: dict) -> tuple[int, bool]:
         # Determine if the game is over (win, draw, or ongoing)
         score = self.check_win(game_info)

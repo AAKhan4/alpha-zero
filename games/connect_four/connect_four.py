@@ -36,7 +36,10 @@ class ConnectFour(BaseGame):
         new_state = state.copy()
         new_state[row, action] = 1  # Place the piece for the current player
         game_info["board"] = new_state
-        return game_info
+        return {
+            "board": new_state * -1,  # Flip the board for the opponent's perspective
+            "player": -game_info["player"]  # Switch player perspective
+        }
     
     def check_win(self, game_info) -> int | None:
         state: np.ndarray = game_info["board"]
@@ -68,12 +71,6 @@ class ConnectFour(BaseGame):
             return 0  # Draw
         
         return None  # Game is still ongoing
-    
-    def change_perspective(self, game_info: dict) -> dict:
-        game_info = game_info.copy()
-        game_info["board"] = -1 * game_info["board"]
-        game_info["player"] *= -1
-        return game_info
     
     def get_state_type(self):
         return ConnectFourState
