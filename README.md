@@ -180,12 +180,181 @@ These evaluations are designed to compare both final performance and training ef
 
 Initial experiments suggest that supervised pretraining improves early self-play stability and accelerates convergence compared to reinforcement learning from scratch.
 
+## Evaluation
+
+### Overview
+
+The evaluation of performance and training dynamics of the implemented AlphaZero-inspired framework were conducted under three training regimes:
+- Supervised Learning (SL)
+- Reinforcement Learning (RL)
+- Hybrid Supervised + Reinforcement Learning (SL + RL)
+
+All experiments were conducted for the 9x9 variant of the game Go, using identical neural network architectures to ensure that performance differences arise primarily from training methodology rather than model capacity.
+
+Evaluation focuses on various key aspects of training behaviour and model performance.
+
+### Training Dynamics
+
+The training process is analysed with respect to several important characteristics.
+
+#### Exploration/Exploitation Trade-offs
+
+For RL models, training relies on MCTS to guide self-play. The balance between exploration and exploitation is controlled through parameters such as:
+- exploration constant: C
+- Dirichlet noise parameters: aplha (α) and epsilon (ϵ)
+- temperation scheduling during action sampling
+
+These parameters significantly influence the diversity and quality of states encountered during training and therefore the stability of policy learning.
+
+The experiments investigate how different exploration settings affect:
+- diversity of generated states
+- stability of policy improvements
+- robustness against stochastic opponents
+
+#### Convergence Behaviour
+
+Convergence is evaluated by monitoring how model performance evolves over training iterations.
+
+Key indicator of convergence include:
+- improvement in win rate over training iterations
+- stability of policy predictions
+- reduction in training loss
+- consistency of MCTS search results
+
+Due to the limited compute budget, convergence in primarily evaluated through model performance trends rather than theoretical optimality.
+
+#### Performance Evaluation
+
+Model strength is measured through competitive play against baseline opponents.
+
+Two main baselines are used as follows.
+
+##### Performance Vs Random Model
+
+The main evaluation metric is win rate against a uniformly random policy agent.
+
+This benchmark provides a useful measure of:
+- general game understanding
+- robustness to unpredictable play
+- ability to capitalise on weak opponent moves
+
+Random opponents often produce highly irregular board states. As a result, strong performance against random play indicates that the model has learnt generalisable strategy patterns rather than memorising deterministic move sequences.
+
+##### Performance Vs SL Model
+
+For RL models, additional evaluation compares performance against SL model trained on professional games data.
+
+This comparison helps measure:
+- the extent to which self-play improves beyond imitation learning
+- the effectiveness of reinforcement learning in refining policy quality
+- the ability of self-play to discover strategies not present in the supervised dataset
+
+#### Training Efficiency
+
+In addition to raw performance, training efficiency is considered.
+
+Important factors include:
+- total training time
+- number of self-play games required
+- number of MCTS searches per move
+- rate of improvement across training iterations
+
+Because the system was developed under limited computational resources, careful parameter tuning was required to maximise learning efficiency while maintaining feasible training times.
+
+#### Practical Constraints
+
+A key limitation of the experiments is the available compute environment.
+
+Training was conducted on consumer hardware with restricted:
+- RAM capacity
+- CPU parallelism
+- overall training time budget
+
+These constraints influenced several design decisions, including:
+- limiting number of MCTS simulations per move
+- restricting replay buffer size
+- using relatively small neural network architectures
+- balancing number of self-play games per iteration with search depth
+
+Despite these constraints, the experiments aim to demonstrate that AphaZero-style training remains effective at smaller scales when parameters are carefully tuned.
+
+### Common Training Configuration
+
+All experiments share a common neural network architecture and core training framework. This ensures that differences in performance arise primarily from the training method rather than architectural variation.
+
+#### Neural Network Architecture
+
+The policy and value networks use a residual convolutional architecture similar to the one descibed in AlphaZero.
+
+Architecture summary:
+|Component      |Specification            |
+|---|---|
+|Backbone       |Residual NN              |
+|Residual Blocks|8                        |
+|Channels       |64                       |
+|Outputs        |Policy head + Value head |
+
+The policy head outputs a policy distribution over all legal actions, while the value head predicts the game outcome from the current player's perspective.
+
+This architecture represents a compromise between model capacity and computational efficiency, allowing training to remain feasible under limited hardware resources.
+
+#### State Representation
+
+Game states are encoded as multi-channel tensors representing board occupancy.
+
+Encoding includes separate channels for:
+- player stones
+- empty spaces
+- opponent stones
+
+States are always represented from the perspective of the current player to play the next move. This ensures that the network learns symmetric strategic patterns independent of player colour.
+
+#### Optimisation
+
+All models are trained using gradient-based optimisation with following parameters:
+|Parameter      |Value                    |
+|---|---|
+|Optimiser       |Adam              |
+|Learning Rate  |8e-5                        |
+|Weight Decay       |1e-4                   |
+|Batch Size        |128 |
+
+Loss functions combine policy and value objectives:
+- Policy loss: KL-divergence between predicted policy and target distribution
+- Value loss: mean squared error between predicted value and game outcome
+
+#### Replay Buffer
+
+For RL models, training data generated through self-play is stored in a replay-buffer.
+
+|Parameter      |Value                    |
+|---|---|
+|Replay Buffer Size       |120000 samples |
+
+This buffer size provides a balance between:
+- retaining sufficient training diversity
+- avoiding excessive memory consumption
+- preventing early training data from dominating later
+
+#### Hardware Environment
+
+Experiments were conducted on a limited individual system with constrained memory and processing resources.
+
+To maintain stable training under these conditions:
+- the number of parallel self-play workers was limited
+- MCTS search counts were restricted
+- branching factor for MCTS node expansion were capped
+
+These considerations significantly influenced the final training configuration along with models learning behaviour.
+
+
 ## Limitations & Future Work
 
 - Experiments currently limited to 9×9 Go
+- Limited computation and resource allocation for training
 - Limited human game dataset for pretraining
 - Simple ko rule (no superko)
-- Future work includes larger board sizes, extended evaluation, and league-based comparisons
+- Future work includes extended evaluation, and league-based comparisons
 
 ## References
 
