@@ -31,7 +31,14 @@ class ModelTrainer:
 
         hours, rem = divmod(time_taken, 3600)
         minutes, seconds = divmod(rem, 60)
+        self.save_time(f"{int(hours)}h:{int(minutes)}m:{int(seconds)}s", game, flag)
         print(f"\nTraining completed in {int(hours)}h:{int(minutes)}m:{int(seconds)}s")
+
+    def save_time(self, time_taken: str, game: BaseGame, flag: str = "rl", save_dir: str = "./models"):
+        os.makedirs(save_dir, exist_ok=True)
+        time_file = os.path.join(save_dir, f"{game}", f"{flag}, training_time.txt")
+        with open(time_file, "w") as f:
+            f.write(f"Training time for {game.__class__.__name__} ({flag}): {time_taken}\n")
 
     def run(self, game: BaseGame, args: dict, model_dir: str = None, data_dir: str = None, flag: str = "rl"):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
