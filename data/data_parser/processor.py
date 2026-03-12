@@ -23,7 +23,6 @@ class DataProcessor:
 
         all_states = []
         all_actions = []
-        all_values = []
 
         for file_name in raw_files: # loops assuming all files are in main raw data directory
             file_path = os.path.join(self.raw_data_dir, file_name)
@@ -39,8 +38,7 @@ class DataProcessor:
 
                 b = self.board.copy()
 
-                try:
-                    for move in moves:
+                for move in moves:
                         if not move:
                             continue
                         color = move[0].lower()
@@ -68,12 +66,15 @@ class DataProcessor:
 
                         transforms = self.get_all_transforms(new_state, action)
 
+                        perturb_action = np.random.choice([True, False], p=[0.12, 0.88])  # 12% chance to perturb
+                        if perturb_action:
+                            perturbed_action = self.perturb_action(new_state, action, self.game.col_count)
+                            if perturbed_action is not None:
+                                transforms.extend(self.get_all_transforms(new_state, perturbed_action))
+
                         for s, a in transforms:
                             all_states.append(self.game.get_encoded_state(s))
                             all_actions.append(a)
-                except ValueError:
-                    print(f"Invalid move in file {file_name}. Skipping rest of game.")
-                    continue
 
         for i in range(2):
             # Act final moves as double pass to end the game
@@ -111,3 +112,23 @@ class DataProcessor:
             transforms.append((flipped_state, flipped_action))
 
         return transforms
+
+    def perturb_action(self, state: np.ndarray, action: int, max_radius: int = 2) -> int | None:
+        '''Perturbs the given action to a neighboring space or a space within a given radius.'''
+        if action == self.game.action_size - 1:  # Don't perturb pass move
+            return None
+        original_row, original_col = divmod(action, self.game.col_count)
+        # Generate random offsets within the radius
+        for _ in range(10):  # Try up to 10 random perturbations
+            row_offset = np.random.randint(-max_radius, max_radius + 1)
+            col_offset = np.random.randint(-max_radius, max_radius + 1)
+            new_row = original_row + row_offset
+            new_col = original_col + col_offset
+            # Check if the new action is within bounds
+            if 0 <= new_row < self.game.row_count and 0 <= new_col < self.game.col_count:
+                new_action = new_row * self.game.col_count + new_col
+                game_info = {"board": state, "ko_position": None}  # Assuming player 1's perspective for validation
+                # Check if the new action is valid
+                if self.game.is_valid_action(game_info, new_action):
+                    return new_action
+        return None  # Return None if no valid perturbation is found
