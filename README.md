@@ -347,14 +347,190 @@ To maintain stable training under these conditions:
 
 These considerations significantly influenced the final training configuration along with models learning behaviour.
 
+### Supervised Learning (SL)
 
-## Limitations & Future Work
+#### Overview
+
+The SL stage trains the policy network using a dataset of professional-level move selections. The objective of this stage is to learn strong prior move probabilities that reflect human or expert play patterns. These learned priors can then be evaluated directly or used to initialise reinforcement learning (RL) through self-play.
+
+Unlike RL approaches such as AlphaZero, SL relies entirely on existing gameplay data rather than exploration-driven self-play. As a result, the model learns to imitate observed moves but does not directly optimise for game outcomes.
+
+This section evaluates how effectively SL training alone produces a competitive policy. and how well such a model generalises when facing opponents that produce non-expert/more diverse game states.
+
+#### Dataset and Preprocessing
+
+The supervised dataset contains 170,000+ state-action pairs.
+
+Each sample consists of:
+- a board state from current player perspective
+- the move selected in professional game in position
+
+Game states were converted into the same tensor representation used during RL. The representation includes separate channels indicating the location of player stones, empty spaces, and opponent stones.
+
+To improve state-action diversity in dataset and model generalisation, two data augmentation steps were taken.
+
+- **State-Action Transformations**:
+  Each board state and action pair is augmented using all possible rotations (0°, 90°, 180°, 270°) and horizontal reflections. For each transformation, both the board tensor and the action index are adjusted to match the new orientation. This increases dataset diversity and helps the model generalise to symmetric positions.
+
+  Specifically, for each original state-action pair:
+  - Four rotated versions are generated (rotating the board and action coordinates)
+  - Each rotated version is also horizontally flipped, producing eight total variants per original pair
+  - Action indices are recalculated to correspond to the transformed board
+
+  This augmentation ensures the model learns from a wider range of spatial patterns and reduces overfitting to specific board layouts.
+
+- **Action Perturbation**:
+  To further increase dataset diversity and robustness, action perturbation is applied to a subset of state-action pairs. With a probability of 12%, the original action is perturbed to a nearby valid move within a radius of up to two spaces from the original location. The perturbation process attempts up to 10 random offsets, ensuring the new action is within board bounds and valid according to game rules.
+
+  Specifically:
+  - For each original action (except pass moves), random row and column offsets are generated within a radius of 2.
+  - If the resulting move is valid (not violating game rules and within board limits), it is used as a perturbed action.
+  - The perturbed action and its corresponding board state are then augmented using the same set of rotations and reflections as above, producing additional variants.
+  - If no valid perturbation is found after 10 attempts, no perturbed action is added for that sample.
+
+  By exposing the model to a wider variety of move choices and board states, this augmentation helps it generalise beyond expert play and adapt to unconventional strategies. In games like Go, where overall shape and territory are key, nearby moves often preserve strategic patterns. This approach encourages the model to recognise and respond to broader spatial concepts, reducing overfitting to strictly professional moves.
+
+#### Training Configuration
+
+SL training uses the same neural network architecture and optimisation configuration described in the common training setup.
+
+Key parameters used during SL training:
+|Parameter      |Value                    |
+|---|---|
+|Epochs       |8              |
+|Optimiser       |Adam              |
+|Learning Rate  |1e-4                        |
+|Weight Decay       |1e-4                   |
+|Batch Size        |128 |
+
+#### Policy Target Construction
+
+Rather than training using purely deterministic target action, policy targets were smoothed to improve generalisation.
+
+The target distribution assigns most probability mass to the move in dataset while retaining a small probability for other legal actions.
+
+This smoothing reduces overfitting and encourages network to retain some uncertainty when evaluating unfamiliar states.
+
+Without smoothing, the network quickly becomes overly deterministic, which negatively impacts robustness when encountering states that were not present in the supervised dataset.
+
+#### Training Behaviour
+
+##### Convergence Characteristics
+
+During training, the SL model exhibits rapod loss reduction during early epochs, followed by gradual convergence.
+
+In preliminary experiments, loss values typically plateau after 12-15 epochs. Training beyond this point produces little improvement in prediction accuracy but increases the tendency of model to become overly deterministic.
+
+To prevent excessive overfitting to the dataset, training was therefore limited to a moderate number of epochs.
+
+##### Policy Determinism
+
+A notable property of purely supervised models iss their tendency to develop highly deterministic policies.
+
+When trained for too many epochs, the model strongly prefers a single move in post positions. While this behaviour is desirable when the encountered states closely resemble the training data, it can be problematic when facing unpredictable opponents.
+
+Random opponents frequently generate irregular board states that are unlikely to appear in expert gameplay datasets. In such situations, a deterministic policy may struggle to adapt and can make poor decisions due to a lack of alternative move exploration.
+
+This behaviour highlights an important limitation of imitation-based training in complex games.
+
+#### Performance Evaluation
+
+##### Training Efficiency
+
+SL training is computationally inexpensive compared to RL approaches. Because the dataset is static and no self-play generation is required, the training process completes quickly even on limited hardware.
+
+For the experiments conducted in this project the metrics are as follows.
+
+|Metric      |Value                    |
+|---|---|
+|Epochs       |8              |
+|Sample Size       |170,136              |
+|Batch Size        |128 |
+|Training Time       |0h:2m:23s                   |
+
+This short training time highlights one of the key advantages of the SL training regime. It can produce a reasonably competent policy in a fraction of the time required for RL methods.
+
+However, the resulting policy is limited by the information contained within the dataset and cannot improve beyond the patterns present in the expert move distribution.
+
+##### Performance Vs Random Model
+
+To evaluate the practical strength of the SL model, games were played against a uniformly random opponent.
+
+The random model selects from all legal actions with equal probability at each move. Although weak strategically, such opponent frequently generates irregular or suboptimal board states. This provides a useful test of whether the SL model can generalise beyond positions commonly seen in expert games.
+
+For this evaluation, 1000 games are played between the SL and random models, with each alternating every game to play the first move.
+
+The final SL model achieved the following results:
+SL Wins: 609
+Random Wins: 391
+Draws: 0
+Win Rate of SL over Random: 60.90%
+
+This indicates that the model has learned a meaningful degree of game structure and is capable of exploiting many obvious mistakes made by the random opponent.
+
+However, the win rate remains below what can typically by achieved with RL methods.
+
+##### Performance Across Training Epochs
+
+Performance was also measured across intermediate training checkpoints.
+
+Interestingly, later stages of earlier checkpoints occasionally produced slightly higher win rates against the random model than the final training model.
+
+For example, Epoch 6 produced a win rate of ~65% as compared to the final 60.90%
+
+While the Epoch 6 model achieved a marginally higher win rate in this evaluation, the final Epoch 8 model was selected as the SL baseline for subsequent experiments.
+
+This decision was made because the later model demonstrated more stable performance across repeated evaluation runs and over larger number of simulated games, whereas earlier checkpoints exhibited higher variance in results.
+
+Earlier experiment showed that continuing training beyond 8 iterations, the SL performance against random model starts to eventually decay, leading SL winrate to dive far below 50%. This observation falls in line with earlier assumptions, as it is expected that excessive SL training leads to more deterministic play, making the model weaker and less robust against an opponent that often produces unexpected game states.
+
+#### Strenghts and Limitations of SL
+
+##### Strengths
+
+Despite its limitations, SL provides several important benefits.
+
+- **Training Time & Compute**
+  Compared to RL, an SL training regime requires much less training time and computational resources to produce tangible results.
+
+- **Strong Initial Policy**
+  The Supervised model learns meaningful move priors that reflect human strategic knowledge. These priors provide a strong initialisation for RL.
+
+- **Faster Early Learning**
+  Self-play systems initialised with SL model are more likely to converge faster compared to those trained from scratch.
+
+##### Limitations
+
+SL alone is insufficient to produce a highly competitive Go model.
+
+The following are the primary limitations observed during evaluation.
+
+- **Limited Strategic Adaptation**
+  Because training targets are fixed, the model cannot discover new strategies beyond those present in the dataset.
+
+- **Poor Generalisation to Random Play**
+  Random opponents generate positions that are rarely observed in professional-level games, exposing weakness in purely imitation-based policies.
+
+- **Deterministic Policy Behaviour**
+  Overtraining leads to extremely confident predictions, reducing flexibility when encountering unfamiliar games states.
+
+#### Motivation for RL
+
+These limitations motivate the transition to reinforcement learning through self-play.
+
+Self-play allows agents to:
+- explore previously unseen positions
+- learn strategies not present in the dataset
+- directly optimise for winning outcomes
+
+Despite its shortcomings and imitation-based policies, SL serves as a strong baseline for human-like gameplay behaviour and is therefore used as a standard; RL will be evaluated against this model in addition to a random model.
+
+### Limitations
 
 - Experiments currently limited to 9×9 Go
 - Limited computation and resource allocation for training
 - Limited human game dataset for pretraining
 - Simple ko rule (no superko)
-- Future work includes extended evaluation, and league-based comparisons
 
 ## References
 
