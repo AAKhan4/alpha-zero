@@ -14,7 +14,7 @@ import multiprocessing
 
 from core.mcts.res_net import ResNet
 
-REPLAY_BUFFER_SIZE = 2000  # Maximum size of the replay buffer to store self-play data
+REPLAY_BUFFER_SIZE = 4000  # Maximum size of the replay buffer to store self-play data
 
 
 class AlphaZero:
@@ -41,7 +41,17 @@ class AlphaZero:
 
             # Forward pass and compute loss
             out_pol, _ = self.model(state)
-            loss = F.cross_entropy(out_pol, torch.tensor(action, dtype=torch.long, device=self.model.device))
+            
+            out_policy = torch.softmax(out_pol, dim=1).detach().cpu().numpy()
+            target_policy = np.zeros_like(out_policy)
+            for idx, act in enumerate(action):
+                target_policy[idx][act] = 0.85  # Set target probability for the correct action
+                others = np.where(np.arange(out_policy.shape[1]) != act)[0]
+                target_policy[idx][others] = 0.15 / len(others)  # Distribute remaining probability among all actions
+            target_pol = torch.tensor(target_policy, dtype=torch.float32, device=self.model.device)
+
+
+            loss = F.kl_div(torch.log_softmax(out_pol, dim=1), target_pol, reduction="batchmean")  # KL divergence for policy loss
             batch_losses.append(loss.item())
             # Backward pass and optimizer step
             self.optimizer.zero_grad()
@@ -58,40 +68,34 @@ class AlphaZero:
         """Perform self-play to generate training data"""
         ret_mem = []  # Memory to store game data
         games = [SPG(self.game) for _ in range(self.args["num_parallel_games"])]  # Parallel games
-
         while games:
             # Conduct MCTS searches for all active games
             self.mcts.search(games)
 
             for i in range(len(games))[::-1]:
                 spg = games[i]
-                game_info = spg.game_state.get_info()
-                mcts_probs = self.calc_mcts_probs(spg)  # Compute MCTS probabilities
-
-                board_state = game_info["board"]  # Use original shape for compatibility with TicTacToe and ConnectFour
-                action = self.sample_action(mcts_probs, game_info)  # Sample action based on MCTS probabilities
-
-                spg.mem.append((board_state, mcts_probs, game_info["player"]))  # Store state, probs, player
-
-                game_info = self.game.get_next_state(game_info, action)
+                game_info = spg.root.game_state.get_info()
+                
                 val, terminal = self.game.is_terminal(game_info)
                 val /= abs(val) if val != 0 else 1  # Normalize value to [-1, 1]
                 if terminal:
                     # Backpropagate results and remove finished games
                     self.backpropagate(spg, game_info["player"], val, ret_mem)
                     games.pop(i)
-                else:
-                    game_info = self.game.change_perspective(game_info)
-                    spg.game_state.update(game_info)
+                    continue
+                
+                mcts_probs = self.calc_mcts_probs(spg)  # Compute MCTS probabilities
+                board_state = game_info["board"]  # Use original shape for compatibility with TicTacToe and ConnectFour
+                spg.mem.append((board_state, mcts_probs, game_info["player"]))  # Store state, probs, player for training
 
-                temp = spg.root
-                spg.root = None  # Clear the root to save memory
-                for child in temp.children:
-                    if child.action == action:
-                        spg.root = child  # Move down the tree to the selected child
-                        spg.root.parent = None  # Detach the new root from its parent to save memory
-                        spg.root.depth = 0  # Reset depth for the new root
-                        break
+                action = self.sample_action(mcts_probs, game_info)  # Sample action based on MCTS probabilities
+                new_root = spg.root.children.get(action)  # Move down the tree to the chosen action
+                spg.root = None
+                if new_root is None:
+                    raise ValueError("Failed to move down the tree to the chosen action. Action: {}, State info: {}".format(action, game_info))
+                spg.node = None
+                new_root.make_root() # Set the new root for the next iteration
+                spg.root = new_root  # Set new root for the next iteration
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()  # Clear GPU memory
@@ -212,14 +216,18 @@ class AlphaZero:
         """Compute MCTS probabilities for actions"""
         mcts_probs = np.zeros(self.game.action_size)
         if not spg.root.children:
-            raise ValueError("MCTS root node has no children to calculate probabilities from.")
+            raise ValueError("MCTS failed to expand any children for the current game state. State info: {}".format(spg.root.game_state.get_info()))
 
-        for child in spg.root.children:
-            mcts_probs[child.action] = child.visit_count  # Use visit counts as probabilities
+        for action, child in spg.root.children.items():
+            mcts_probs[action] = child.visit_count + 1  # Use visit counts as probabilities
 
         # Normalize probabilities
         total_visits = np.sum(mcts_probs)
-        mcts_probs = (mcts_probs / total_visits) if total_visits > 0 else np.ones_like(mcts_probs) / len(mcts_probs)
+        mcts_probs = (mcts_probs / total_visits)
+        uniform = np.ones_like(mcts_probs)
+        uniform[mcts_probs == 0] = 0  # Ensure invalid moves remain 0
+        uniform /= np.sum(uniform)  # Normalize uniform distribution
+        mcts_probs = 0.9 * mcts_probs + 0.1 * uniform  # Add exploration noise
 
         return mcts_probs
 
@@ -237,7 +245,7 @@ class AlphaZero:
         action_probs = mcts_probs ** (1 / temp)
         sum_probs = np.sum(action_probs)
         # Normalize probabilities
-        action_probs = (action_probs / sum_probs) if sum_probs > 0 else (np.ones_like(action_probs) / len(action_probs))
+        action_probs = (action_probs / sum_probs)
         return np.random.choice(self.game.action_size, p=action_probs)
 
     def backpropagate(self, spg: SPG, player: int, val: float, ret_mem: List) -> None:

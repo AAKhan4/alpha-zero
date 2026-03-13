@@ -22,7 +22,7 @@ class MCTS:
         # Initialize root nodes for all parallel games if not already initialized
         for i, game in enumerate(games):
             if not game.root:
-                game.root = Node(self.game, self.args, game.game_state)
+                game.root = Node(self.game, self.args)  # Create root node with the initial game state
 
         # Perform the specified number of MCTS searches
         for _ in range(self.args["num_searches"]):
@@ -35,7 +35,7 @@ class MCTS:
                     node = node.select()  # Select the best child node
 
                 # Check if the selected node is terminal
-                val, terminal = self.game.is_terminal(node.game_state.get_info())
+                val, terminal = self.game.is_terminal(node.rebuild_state().get_info())
                 val /= abs(val) if val != 0 else 1  # Normalize terminal value to [-1, 1]
 
                 if terminal:
@@ -46,7 +46,7 @@ class MCTS:
             # Collect all nodes that can be expanded
             if expandable_nodes:
                 # Get states for all expandable nodes
-                states = np.stack([node.game_state.get_info()["board"] for node in expandable_nodes])
+                states = np.stack([node.rebuild_state().get_info()["board"] for node in expandable_nodes])
                 # Get policy and value predictions for these states
                 policy, val = self.model(
                     torch.tensor(self.game.get_encoded_state(states), device=self.model.device)
@@ -61,6 +61,6 @@ class MCTS:
             else:
                 # Skip this iteration if there are no expandable nodes
                 continue
-            
+                
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()  # Clear GPU memory
+                torch.cuda.empty_cache()  # Clear GPU memory after each search iteration to prevent memory overflow
