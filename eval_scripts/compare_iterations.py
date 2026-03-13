@@ -4,6 +4,7 @@ import argparse
 from time import time
 import torch
 import numpy as np
+from tqdm import tqdm
 
 from core.mcts.res_net import ResNet
 from games.base_game import BaseGame, GameState
@@ -13,17 +14,16 @@ from games.connect_four.connect_four import ConnectFour, ConnectFourState
 from training_scripts.training_args import TrainingArgsBuilder
 
 class IterationCompare():
-    def __init__(self, game: BaseGame = None, args=None, model: str = None, num_games: int = 100, vs_sl: bool = False):
-
+    def __init__(self, game: BaseGame = None, args=None, model_type: str = None, num_games: int = 100, opponent: str = "rand"):
         game = game if game else Go()
 
         args_builder = TrainingArgsBuilder(game)
         args = args if args else args_builder.build_args(game)
 
-        print(f"\nComparing iterations {model} on {game} with args: {args}\n")
+        print(f"\nComparing all iterations of {model_type} against {opponent} on {game}\n")
 
         start_time = time()
-        self.run(game, args, model=model, num_games=num_games, vs_sl=vs_sl)
+        self.run(game, args, model_type=model_type, num_games=num_games, opponent=opponent)
         end_time = time()
 
         time_taken = end_time - start_time
@@ -32,159 +32,164 @@ class IterationCompare():
         minutes, seconds = divmod(rem, 60)
         print(f"\nComparison completed in {int(hours)}h:{int(minutes)}m:{int(seconds)}s")
 
-    def run(self, game: BaseGame, args: dict, model: str = None, num_games: int = 100, vs_sl: bool = False):
+    def run(self, game: BaseGame, args: dict, model_type: str = None, num_games: int = 100, opponent: str = "rand") -> None:
         print(f"Using device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}\n")
 
-        models = self.get_models(model, game, args) # Load models for comparison
+        model_paths = self.get_model_paths(model_type, game)
 
-        if models is None:
-            raise ValueError("At least one model must be specified for comparison.")
+        for model_path in model_paths:
+            model_name = os.path.basename(model_path).split(".")[0]
+            print(f"Comparing {model_name} against {opponent}...")
 
-        results = self.play_games(game, models, args, num_games=num_games, vs_sl=vs_sl)
-        
-        for idx, i in enumerate([1, 5, 10, 15, 20, 25]):
-            win_rate = results[i][1] / num_games * 100
-            print(f"Win Rate of iteration {idx} : {win_rate:.2f}%\n")
-            self.save_results(num_games, i, model, results[idx])
-    
-    def save_results(self, num_games: int, model_idx: int, model_type: str, results: dict):
-        results_dir = os.path.join("./evaluation/compare_iterations", model_type)
-        os.makedirs(results_dir, exist_ok=True)
-        result_file = os.path.join(results_dir, f"iteration_{model_idx}_results.txt")
-        with open(result_file, "w") as f:
-            f.write(f"Results of iteration {model_idx}:\n")
-            f.write(f"Wins: {results[1]}\n")
-            f.write(f"Losses: {results[-1]}\n")
-            f.write(f"Draws: {results[0]}\n")
-            f.write(f"Win Rate: {results[1] / num_games * 100:.2f}%\n")
-        print(f"Results saved to {result_file}\n")
+            results = self.play_games(game, model_path, num_games=num_games, args=args, opponent=opponent)
 
-    def get_models(self, model_type: str, game: BaseGame, args: dict) -> list[ResNet]:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        models = []
-        if model_type is None:
-            raise ValueError("Model parameter cannot be None when loading models.")
-        else:
-            # Load specified model
-            model_path = os.path.join("./models", str(game), model_type)
-            for f in os.listdir(model_path):
-                if f.startswith("model_") and f.endswith(".pth") and (int(f[6]) == 1 or int(f[6]) % 5 == 0):
-                    model = ResNet(game, args['res_blocks'], args['channels'], device=device)
-                    model.load_state_dict(torch.load(os.path.join(model_path, f), map_location=device))
-                    model.eval()
-                    models.append(model)
+            win_rate = results[1] / sum(results.values()) * 100 if sum(results.values()) > 0 else 0
+            print(f"{model_name} Win Rate: {win_rate:.2f}%")
+            self.save_results(game, model_name, results)
 
-        return models
+    def get_model_paths(self, model_type: str, game: BaseGame) -> list:
+        model_dir = os.path.join("./models", str(game), model_type)
+        model_files = [
+            os.path.join(model_dir, f)
+            for f in os.listdir(model_dir)
+            if f.startswith("model_") and f.endswith(".pth")
+        ]
+        if not model_files:
+            raise FileNotFoundError(f"No models found for type {model_type} in {model_dir}")
+        return sorted(model_files, key=lambda x: int(os.path.basename(x).split("_")[1].split(".")[0]))
     
-    def get_sl_model(self, game: BaseGame, args: dict) -> ResNet:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = ResNet(game, args['res_blocks'], args['channels'], device=device)
-        sl_model_path = os.path.join("./models", str(game), "sl", "model_1.pth")
-        
-        model_files = [f for f in os.listdir(sl_model_path) if f.startswith("model_") and f.endswith(".pth")]
+    def get_latest_sl_model_path(self, game: BaseGame) -> str:
+        model_dir = os.path.join("./models", str(game), "sl")
+        model_files = [
+            os.path.join(model_dir, f)
+            for f in os.listdir(model_dir)
+            if f.startswith("model_") and f.endswith(".pth")
+        ]
+        if not model_files:
+            raise FileNotFoundError(f"No SL models found in {model_dir}")
+        return sorted(model_files, key=lambda x: int(os.path.basename(x).split("_")[1].split(".")[0]))[-1]
 
-        if model_files:
-            latest_model = max(model_files, key=lambda x: x[6])
-            model.load_state_dict(torch.load(os.path.join(sl_model_path, latest_model)))
-            model.eval()
-            print(f"Loaded model: {latest_model}")
-        else:
-            raise FileNotFoundError("No valid model file found for the first model.")
-        return model
-    
-    def get_model_action(self, game: BaseGame, model: ResNet, game_info: dict):
-        policy, _ = model(
-            torch.tensor(game.get_encoded_state(game_info["board"]), device=model.device).unsqueeze(0)
-        )
-        policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
-        policy = policy ** 2  # Boost probabilities to favor higher ones
-        policy /= np.sum(policy) if np.sum(policy) > 0 else 1
-        action = None
-        while action is None or not game.is_valid_action(game_info, action):
-            action = np.random.choice(len(policy), p=policy)  # Sample action based on policy
-        return action
-    
-    def get_random_action(self, game: BaseGame, game_info: dict):
-        valid_actions = game.get_valid_actions(game_info)
-        action = None
-        while action is None or not game.is_valid_action(game_info, action):
-            action = np.random.choice(np.where(valid_actions == 1)[0])
-        return action
-    
-    def handle_non_terminal(self, game: BaseGame, game_state: GameState):
-        if not terminal:
-            game_info = game_state.get_info()
-            
-            for _ in range(2):  # Both players pass to end the game
-                game_info = game.get_next_state(game_info, game.row_count * game.col_count)  # Pass action
-                game_state.update(game_info)
-                val, terminal = game.is_terminal(game_info)
-                if terminal:
-                    return val
-        return 0  # Count draw if maxed moves & error reaching terminal state
-    
-    def play_games(self, game: BaseGame, models: list[ResNet], args: dict, num_games: int = 100, vs_sl: bool = False) -> dict:
-        sl_model = None
-        if vs_sl:
-            sl_model = self.get_sl_model(game, args)
-            models.append(sl_model)
-        
-        with multiprocessing.Pool(processes=len(models)) as pool:
-            tasks = []
-            for i, model in enumerate(models):
-                for j in range(num_games):
-                    flip_res = (j % 2 == 1)  # Alternate who goes first
-                    tasks.append(pool.apply_async(self.game_loop_worker, args=(game, model, sl_model if vs_sl else None, flip_res, i)))
-            
-            results = {i: {1: 0, -1: 0, 0: 0} for i in range(len(models))}
+    def play_games(self, game: BaseGame, model_path: str, num_games: int = 100, args: dict = None, opponent: str = "rand") -> dict:
+        results = {1: 0, -1: 0, 0: 0}  # Initialize win/draw counters
 
-            for task in tasks:
-                idx, val = task.get()
-                if val > 0:
-                    results[idx][1] += 1
-                elif val < 0:
-                    results[idx][-1] += 1  # Loss for this model
-                else:
-                    results[idx][0] += 1  # Draw
+        worker_args = [
+            {
+                'model_path': model_path,
+                'game': game,
+                'flip': (i % 2 == 1),  # Alternate starting positions
+                'opponent': opponent
+            }
+            for i in range(num_games)
+        ]
+
+        with multiprocessing.Pool(processes=args["num_workers"]) as pool:
+            with tqdm(total=num_games, desc=f"Playing games for {os.path.basename(model_path)}") as pbar:
+                for result in pool.imap_unordered(self.game_loop_worker, worker_args):
+                    if result > 0:
+                        results[1] += 1
+                    elif result < 0:
+                        results[-1] += 1
+                    else:
+                        results[0] += 1
+                    pbar.update(1)
+
         return results
 
-    
-    def game_loop_worker(self, game: BaseGame, model: ResNet, sl_model: ResNet = None, flip_res: bool = False, idx: int = 0):
-        state_map = {TicTacToe: TicTacToeState,
-                     ConnectFour: ConnectFourState,
-                     Go: GoState}
-        game_state: GameState = state_map[type(game)]()
+    def save_results(self, game: BaseGame, model_name: str, results: dict) -> None:
+        results_dir = os.path.join("./evaluation", "compare_iterations", str(game), model_name)
+        os.makedirs(results_dir, exist_ok=True)
+        result_file = os.path.join(results_dir, "compare_iterations_results.txt")
+        win_rate = results[1] / sum(results.values()) * 100 if sum(results.values()) > 0 else 0
+        with open(result_file, "a") as f:
+            f.write(f"{win_rate:.2f}%\n")
+        print(f"Results saved to {result_file}\n")
 
-        for _ in range(70): # Max moves to prevent infinite loops or long stalling games
+    def game_loop_worker(self, worker_args) -> int:
+        '''Worker function for playing a single game.'''
+        game: BaseGame = worker_args['game']
+        model_1 = self.load_model(worker_args['model_path'], game) if worker_args['model_path'] else None
+        model_2 = self.load_model(self.get_latest_sl_model_path(game), game) if worker_args['opponent'] == "sl" else None
+        flip_res = 1  # Used to flip the result when models are swapped
+        if worker_args['flip']:
+            model_1, model_2 = model_2, model_1  # Swap models for changing starting positions
+            flip_res = -1  # Model 2 starts first
+
+        game_state: GameState = game.get_state_type()(game)  # Initialize the game state
+
+        terminal = False
+        while not terminal:  # Max 70 turns to prevent infinite loops
             game_info = game_state.get_info()
-            if (game_info["perspective"] == 1) ^ flip_res:
-                action = self.get_model_action(game, model, game_info)
+
+            if game_info["player"] == 1:
+                action = self.get_model_action(game, model_1, game_info)
             else:
-                if sl_model:
-                    action = self.get_model_action(game, sl_model, game_info)
-                else:
-                    action = self.get_random_action(game, game_info)
+                action = self.get_model_action(game, model_2, game_info)
 
             game_info = game.get_next_state(game_info, action)
             game_state.update(game_info)
-            val, terminal = game.is_terminal(game_info)
 
+            val, terminal = game.is_terminal(game_info)
             if terminal:
-                val = val if not flip_res else -val
-                return idx, val
-        
-        val = self.handle_non_terminal(game, game_state)
-        val = val if not flip_res else -val
-        return idx, val
-    
+                return val * game_info["player"] * flip_res  # Return result from the perspective of model_1
+
+    def load_model(self, model_path: str, game: BaseGame) -> ResNet:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        args = TrainingArgsBuilder(game).build_args(game)
+        model = ResNet(game, args["res_blocks"], args["channels"], device=device)
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()
+        return model
+
+    def get_valid_action(self, game: BaseGame, game_info: dict, policy: np.ndarray, az: bool = False) -> int:
+        '''Get a random valid action from the game info.'''
+        valid_actions = game.get_valid_actions(game_info)
+        policy = policy * valid_actions  # Zero out invalid actions & sharpen the distribution
+        policy /= np.sum(policy) if np.sum(policy) > 0 else 1
+        action = None
+        while action is None:
+            candidate = np.argmax(policy)  # Sample action based on policy
+            if game.is_valid_action(game_info, candidate):
+                action = candidate
+            else:
+                policy[candidate] = 0  # Zero out invalid action and renormalize
+                policy /= np.sum(policy) if np.sum(policy) > 0 else 1
+        return action
+
+    def get_random_action(self, game: BaseGame, game_info: dict) -> int:
+        '''Get a random valid action from the game info.'''
+        valid_actions = game.get_valid_actions(game_info)
+        policy = valid_actions / np.sum(valid_actions)
+        action = None
+        while action is None:
+            candidate = np.random.choice(len(policy), p=policy)  # Sample action based on policy
+            if game.is_valid_action(game_info, candidate):
+                action = candidate
+            else:
+                policy[candidate] = 0  # Zero out invalid action and renormalize
+                policy /= np.sum(policy) if np.sum(policy) > 0 else 1
+        return action
+
+    def get_model_action(self, game: BaseGame, model: ResNet, game_info: dict) -> int:
+        '''Get the action from the model based on the current game state.'''
+        az = False
+        if model is None:
+            action = self.get_random_action(game, game_info)
+        else:
+            policy, _ = model(
+                torch.tensor(game.get_encoded_state(game_info["board"]), device=model.device).unsqueeze(0)
+            )
+            policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
+            action = self.get_valid_action(game, game_info, policy, az)
+
+        return action
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compare different iterations of trained models.")
+    parser = argparse.ArgumentParser(description="Compare all iterations of a model type against random.")
     parser.add_argument("--game", type=str, choices=["tic_tac_toe", "connect_four", "go"], default="go", help="The game to use for comparison.")
-    parser.add_argument("--model", type=str, choices=["rl", "sl+rl"], required=True, help="The model iteration identifier to load (e.g., 'iteration_10').")
-    parser.add_argument("--num_games", type=int, default=30, help="Number of games to play for comparison.")
-    parser.add_argument("--vs_sl", action="store_true", help="Whether to compare against a supervised learning model.")
-    
+    parser.add_argument("--model", type=str, choices=["sl", "rl", "sl+rl"], required=True, help="The model type to compare (e.g., 'rl').")
+    parser.add_argument("--vs", type=str, choices=["sl", "rand"], default="rand", help="The opponent to play against.")
+    parser.add_argument("--num_games", type=int, default=500, help="Number of games to play per model iteration.")
     args = parser.parse_args()
 
     game_map = {
@@ -193,6 +198,6 @@ if __name__ == "__main__":
         "go": Go
     }
 
-    game_instance = game_map[args.game]()
+    selected_game = game_map[args.game]()
 
-    IterationCompare(game=game_instance, model=args.model, num_games=args.num_games, vs_sl=args.vs_sl)
+    IterationCompare(game=selected_game, model_type=args.model, num_games=args.num_games, opponent=args.vs)

@@ -140,7 +140,6 @@ def game_loop_worker(worker_args) -> int:
             action = get_model_action(game, model_2, game_info)
 
         game_info = game.get_next_state(game_info, action)
-        game_info = game.change_perspective(game_info)  # Switch perspective for the next turn
         game_state.update(game_info)
 
         val, terminal = game.is_terminal(game_info)
@@ -155,6 +154,20 @@ def get_valid_action(game: BaseGame, game_info: dict, policy: np.ndarray, az: bo
     policy /= np.sum(policy) if np.sum(policy) > 0 else 1
     action = None
     while action is None:
+        candidate = np.argmax(policy)  # Sample action based on policy
+        if game.is_valid_action(game_info, candidate):
+            action = candidate
+        else:
+            policy[candidate] = 0  # Zero out invalid action and renormalize
+            policy /= np.sum(policy) if np.sum(policy) > 0 else 1
+    return action
+
+def get_random_action(game: BaseGame, game_info: dict) -> int:
+    '''Get a random valid action from the game info.'''
+    valid_actions = game.get_valid_actions(game_info)
+    policy = valid_actions / np.sum(valid_actions)
+    action = None
+    while action is None:
         candidate = np.random.choice(len(policy), p=policy)  # Sample action based on policy
         if game.is_valid_action(game_info, candidate):
             action = candidate
@@ -167,14 +180,14 @@ def get_model_action(game: BaseGame, model: ResNet, game_info: dict) -> int:
     '''Get the action from the model based on the current game state.'''
     az = False
     if model is None:
-        policy = np.ones(game.action_size) / game.action_size  # Uniform random policy
+        action = get_random_action(game, game_info)
     else:
         policy, _ = model(
             torch.tensor(game.get_encoded_state(game_info["board"]), device=model.device).unsqueeze(0)
         )
         policy = torch.softmax(policy, dim=1).squeeze(0).cpu().detach().numpy()
+        action = get_valid_action(game, game_info, policy, az)
 
-    action = get_valid_action(game, game_info, policy, az)
     return action
     
 
