@@ -214,6 +214,8 @@ class AlphaZero:
 
     def calc_mcts_probs(self, spg: SPG) -> np.ndarray:
         """Compute MCTS probabilities for actions"""
+        temp = self.get_temp(spg.root.game_state.get_info())  # Get temperature based on game progress
+
         mcts_probs = np.zeros(self.game.action_size)
         if not spg.root.children:
             raise ValueError("MCTS failed to expand any children for the current game state. State info: {}".format(spg.root.game_state.get_info()))
@@ -224,29 +226,28 @@ class AlphaZero:
         # Normalize probabilities
         total_visits = np.sum(mcts_probs)
         mcts_probs = (mcts_probs / total_visits)
-        uniform = np.ones_like(mcts_probs)
-        uniform[mcts_probs == 0] = 0  # Ensure invalid moves remain 0
-        uniform /= np.sum(uniform)  # Normalize uniform distribution
-        mcts_probs = 0.9 * mcts_probs + 0.1 * uniform  # Add exploration noise
+
+        # Apply temperature to control exploration
+        mcts_probs = np.power(mcts_probs, 1 / temp)  # Apply temperature
+        mcts_probs /= np.sum(mcts_probs)  # Re-normalize after applying temperature
 
         return mcts_probs
-
-    def sample_action(self, mcts_probs: np.ndarray, game_info: dict) -> int:
-        """Sample an action based on MCTS probabilities and temperature"""
+    
+    def get_temp(self, game_info: dict) -> float:
+        """Calculate temperature based on game progress for action selection"""
         temp = self.args["init_temperature"]
         if temp > self.args["temp_floor"]:
             num_moves = np.sum(game_info["board"] != 0) if not game_info.get("action_count") else game_info["action_count"]
             temp = temp - (self.args["temp_decay"] * (num_moves // self.args["temp_threshold"]))
-        temp = max(temp, self.args["temp_floor"])  # Ensure temperature doesn't go below temp_floor
+        return max(temp, self.args["temp_floor"])  # Ensure temperature doesn't go below temp_floor
+
+    def sample_action(self, mcts_probs: np.ndarray, game_info: dict) -> int:
+        """Sample an action based on MCTS probabilities and temperature"""
 
         # Sample an action based on MCTS probabilities and temperature
         if np.any(np.isnan(mcts_probs)):
             raise ValueError("MCTS probabilities contain NaN values: current probs: {}".format(mcts_probs))
-        action_probs = mcts_probs ** (1 / temp)
-        sum_probs = np.sum(action_probs)
-        # Normalize probabilities
-        action_probs = (action_probs / sum_probs)
-        return np.random.choice(self.game.action_size, p=action_probs)
+        return np.random.choice(self.game.action_size, p=mcts_probs)
 
     def backpropagate(self, spg: SPG, player: int, val: float, ret_mem: List) -> None:
         """Backpropagate game results to update memory"""
