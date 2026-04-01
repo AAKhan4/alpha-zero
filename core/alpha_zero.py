@@ -215,6 +215,7 @@ class AlphaZero:
     def calc_mcts_probs(self, spg: SPG) -> np.ndarray:
         """Compute MCTS probabilities for actions"""
         temp = self.get_temp(spg.root.game_state.get_info())  # Get temperature based on game progress
+        temp = temp if temp > 1.1 else 1.1  # Ensure temperature is at least 1.1 for proper probability distribution
 
         mcts_probs = np.zeros(self.game.action_size)
         if not spg.root.children:
@@ -243,10 +244,15 @@ class AlphaZero:
 
     def sample_action(self, mcts_probs: np.ndarray, game_info: dict) -> int:
         """Sample an action based on MCTS probabilities and temperature"""
+        temp = self.get_temp(game_info)  # Get current temperature for action selection
+        temp = temp if temp < 1.1 else 1.1  # Ensure temp is at most 1.1 for sampling actions
 
         # Sample an action based on MCTS probabilities and temperature
         if np.any(np.isnan(mcts_probs)):
             raise ValueError("MCTS probabilities contain NaN values: current probs: {}".format(mcts_probs))
+        
+        mcts_probs = np.power(mcts_probs, 1 / temp)  # Apply temperature to probabilities
+        mcts_probs /= np.sum(mcts_probs)  # Re-normalize after applying temperature
         return np.random.choice(self.game.action_size, p=mcts_probs)
 
     def backpropagate(self, spg: SPG, player: int, val: float, ret_mem: List) -> None:
