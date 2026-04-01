@@ -65,7 +65,7 @@ Key features & considerations of this implementation:
 - **Exploration Noise**: Dirichlet noise is added to the root node's policy during self-play to encourage exploration and prevent the model from overfitting to specific strategies.
 - **Tree Representation**: Each node in the tree represents a game state, storing visit counts, value estimates, and prior probabilities for actions.
 - **Sub-tree Reuse**: After selecting an action during self-play, the corresponding child node becomes the new root for subsequent MCTS iterations, preserving prior search statistics and reducing redundant computation.
-- **Limited Expansion**: Expands top-K actions by policy probability, with K decreasing at deeper depths (root: 30 actions, deeper nodes: 10), reducing computation for large action spaces.
+- **Limited Expansion**: Expands top-K actions by policy probability, with K decreasing at deeper depths (root: 16 actions, deeper nodes: 12), reducing computation for large action spaces.
 
 This implementation ensures that the model learns by iteratively improving its policy and value predictions through self-play, guided by MCTS.
 
@@ -160,7 +160,7 @@ Evaluation of this pipeline is currently in progress.
 - Models can self-play and be evaluated programmatically.
 - Evaluation experiments are currently being conducted.
 
-## Evaluation Plan (In Progress)
+## Evaluation Plan
 
 The system is evaluated across three training regimes:
 - Supervised learning only (SL)
@@ -315,7 +315,7 @@ All models are trained using gradient-based optimisation with following paramete
 |Parameter      |Value                    |
 |---|---|
 |Optimiser       |Adam              |
-|Learning Rate  |8e-5                        |
+|Learning Rate  |1e-4                        |
 |Weight Decay       |1e-4                   |
 |Batch Size        |128 |
 
@@ -329,7 +329,7 @@ For RL models, training data generated through self-play is stored in a replay-b
 
 |Parameter      |Value                    |
 |---|---|
-|Replay Buffer Size       |120000 samples |
+|Replay Buffer Size       |200000 samples |
 
 This buffer size provides a balance between:
 - retaining sufficient training diversity
@@ -417,7 +417,7 @@ Without smoothing, the network quickly becomes overly deterministic, which negat
 
 ##### Convergence Characteristics
 
-During training, the SL model exhibits rapod loss reduction during early epochs, followed by gradual convergence.
+During training, the SL model exhibits rapid loss reduction during early epochs, followed by gradual convergence.
 
 In preliminary experiments, loss values typically plateau after 12-15 epochs. Training beyond this point produces little improvement in prediction accuracy but increases the tendency of model to become overly deterministic.
 
@@ -524,6 +524,201 @@ Self-play allows agents to:
 - directly optimise for winning outcomes
 
 Despite its shortcomings and imitation-based policies, SL serves as a strong baseline for human-like gameplay behaviour and is therefore used as a standard; RL will be evaluated against this model in addition to a random model.
+
+### Reinforcement Learning (RL)
+#### Overview
+
+The RL stage trains a policy from scratch through self-play training loops. The model generates self-play games where it plays against previous versions of itself. This iterative process allows the model to:
+- explore previously unseen positions and strategies
+- directly optimise for winning outcomes through self-play rewards
+- develop strong playing strategies without imitation-based priors
+
+The training loop consists of multiple iterations where: (1) the current policy performs self-play games using MCTS-based exploration, (2) game trajectories are collected and stored in a replay buffer, (3) the policy network is trained on these self-generated trajectories to maximise win probability.
+
+Unlike pure imitation learning, RL through self-play enables the discovery of strategies beyond the training dataset and adaptation to diverse opponent playstyles. The RL policy is evaluated against the SL baseline and random opponents to measure improvement.
+
+#### Training Configuration
+
+RL training uses the same neural network architecture and optimisation configuration described in the common training setup, with the addition of self-play game generation and iterative policy updates.
+
+Key parameters used during RL training:
+|Parameter      |Value                    |
+|---|---|
+|Num Searches       |100                  |
+|Num Games        |400 |
+|Epochs       |8              |
+|Num iterations       |25                   |
+|C       |1.9                  |
+|Alpha        |0.05 |
+|Epsilon       |0.20                   |
+|Init Temperature        |1.2 |
+|Temp Decay       |0.4                   |
+|Temp Decay Period        |Every 12 Moves |
+|Temp Floor       |0.4                   |
+|Replay Buffer        |200000 |
+|Optimiser       |Adam              |
+|Learning Rate  |1e-4                        |
+|Weight Decay       |1e-4                   |
+|Batch Size        |128 |
+
+#### Training Behaviour
+
+##### Convergence Characteristics
+
+During RL training, the loss exhibited non-monotonic behavior with a local minimum at iteration 4, followed by a local maximum at iteration 8. After iteration 8, loss continued to decrease and showed early signs of plateauing towards the end of training (iterations 18-25).
+
+This pattern highlights the complex dynamics of RL optimization, where the loss landscape contains multiple local extrema before reaching convergence. The continued decrease after the local maximum suggests effective learning despite the non-smooth trajectory.
+
+#### Performance Evaluation
+
+##### Training Efficiency
+
+RL training requires significant computational resources due to self-play generation and continuous optimization. The training process involves iterative cycles of simulation and learning on limited hardware.
+
+For the experiments conducted in this project the metrics are as follows.
+
+|Metric      |Value                    |
+|---|---|
+|Epochs       |25              |
+|Training Time       |9h:2m:31s                   |
+
+This training time reflects the computational demands of the RL training regime. The iterative self-play and optimization process requires substantially more resources than SL methods.
+
+##### Performance Vs Random Model
+
+To evaluate the practical strength of the RL model, games were played against a uniformly random opponent.
+
+The random model selects from all legal actions with equal probability at each move. Although weak strategically, such opponent frequently generates irregular or suboptimal board states. This provides a useful test of whether the RL model can generalise beyond positions commonly seen in expert games.
+
+For this evaluation, 1000 games are played between the RL and random models, with each alternating every game to play the first move.
+
+The final RL model achieved the following results:
+RL Wins: 602
+Random Wins: 398
+Draws: 0
+Win Rate of RL over Random: 60.20%
+
+Interestingly, this win rate is comparable to the SL baseline, both achieving approximately 60% win rate against random opponents. This suggests that both supervised learning and self-play reinforcement learning converge to similar performance levels against this weak baseline, despite their different training methodologies. The similarity in performance indicates that the random opponent provides limited signal for differentiation between these training approaches.
+
+##### Performance Vs SL Model
+
+To evaluate the relative performance of the RL model against the SL baseline, games were played between the two trained models.
+
+For this evaluation, 1000 games are played between the RL and SL models, with each alternating every game to play the first move.
+
+The final RL model achieved the following results:
+RL Wins: 448
+SL Wins: 552
+Draws: 0
+Win Rate of RL vs SL: 44.80%
+
+The RL model achieved a 45% win rate against the SL baseline, underperforming relative to the SL model.
+
+This underperformance is likely due to two key factors:
+1. The SL model is based on expert moves, so it is better able to exploit structured opponent actions. When playing against another trained model (which follows a structured policy), the SL model's learned patterns from expert play are more effective than the RL model's self-play derived policy.
+2. The RL training budget was severely constrained by computational limitations. The limited number of searches (100) and games (400) per iteration represent a major bottleneck in training. A more extensive self-play regime with higher search budgets and game volume would likely allow the RL model to develop more robust and strategic policies.
+
+##### Performance Across Training Iterations
+
+Performance was measured across intermediate RL training iterations to understand the learning trajectory.
+
+The RL model exhibited a characteristic learning curve against random opponents. Early training iterations (1-5) showed very low win rates starting from approximately 5-10%, reflecting the model's initial lack of strategic understanding. As training progressed through iteration 10, the win rate climbed steadily to approximately 45-50%, demonstrating gradual policy improvement through self-play and optimization.
+
+Beyond iteration 10, the learning curve flattened considerably. While the final model achieved 60.20% win rate, the improvement from iteration 10 onwards was slower and accompanied by significant variance. Win rates fluctuated between approximately 50-60% and sometimes as low as 45-55% between consecutive iterations, indicating that the learning dynamics became more unstable as the policy matured.
+
+This pattern suggests that the RL training process underwent two distinct phases: a steep improvement phase in early iterations with consistent gain, followed by a plateau phase with high variance and diminishing returns. This behavior is consistent with RL training dynamics, where early iterations see rapid policy improvement in underexplored regions, while later iterations optimize increasingly subtle aspects of strategy with more erratic performance changes.
+
+### Pretrained Reinforcement Learning (SL + RL)
+#### Overview
+The SL + RL model combines supervised learning pretraining with reinforcement learning refinement. This hybrid approach leverages the strong initial policy from supervised learning as a starting point for self-play optimization.
+
+#### Training Configuration
+
+SL+RL training uses the same neural network architecture and optimisation configuration described in the common training setup, using the same parameters as RL with addition of SL pretraining.
+
+Key parameters used during SL + RL training:
+|Parameter      |Value                    |
+|---|---|
+|Num Searches       |100                  |
+|Num Games        |400 |
+|Epochs       |8              |
+|Num iterations       |25                   |
+|C       |1.9                  |
+|Alpha        |0.05 |
+|Epsilon       |0.20                   |
+|Init Temperature        |1.2 |
+|Temp Decay       |0.4                   |
+|Temp Decay Period        |Every 12 Moves |
+|Temp Floor       |0.4                   |
+|Replay Buffer        |200000 |
+|Optimiser       |Adam              |
+|Learning Rate  |1e-4                        |
+|Weight Decay       |1e-4                   |
+|Batch Size        |128 |
+|SL Pretraining Epochs | 8 |
+
+#### Training Behaviour
+
+##### Convergence Characteristics
+
+The SL + RL model exhibited a similar loss trend to the pure RL model, but with notably different dynamics. While both models showed the characteristic two-phase learning pattern (rapid improvement followed by plateau), the SL + RL loss curve was significantly flatter throughout training. The model appeared to plateau earlier in the training process compared to pure RL, indicating that the supervised learning pretraining not only provides a strong initialization but also accelerates convergence. This earlier plateau, combined with the flatter curve, reflects the model's more stable learning progression and suggests that the search space exploration becomes more constrained when starting from an informed policy rather than random initialization.
+
+#### Performance Evaluation
+
+##### Training Efficiency
+
+SL + RL training requires significant computational resources due to self-play generation and continuous optimization. The training process involves iterative cycles of simulation and learning on limited hardware.
+
+For the experiments conducted in this project the metrics are as follows.
+
+|Metric      |Value                    |
+|---|---|
+|Epochs       |25              |
+|Training Time       |9h:29m:8s                   |
+
+This training time reflects the computational demands of the SL + RL training regime. The iterative self-play and optimization process again requires substantially more resources than pure SL methods, however, it is comparable to training time taken by the RL model.
+
+The resulting SL + RL policy can improve beyond the patterns present in the expert move distribution through self-play and continuous optimization.
+
+##### Performance Vs Random Model
+
+For this evaluation, 1000 games are played between the SL + RL and random models, with each alternating every game to play the first move.
+
+The final SL + RL model achieved the following results:
+SL + RL Wins: 694
+Random Wins: 306
+Draws: 0
+Win Rate of SL + RL over Random: 69.40%
+
+The SL + RL model demonstrates notably improved performance against the random baseline compared to both the pure SL (60%) and pure RL (60.20%) models. The 69.4% win rate indicates that the combination of supervised learning initialization with reinforcement learning refinement yields a stronger strategic player against weak opponents.
+
+##### Performance Vs SL Model
+
+To evaluate the relative performance of the SL + RL model against the SL baseline, games were played between the two trained models.
+
+For this evaluation, 1000 games are played between the SL + RL and SL models, with each alternating every game to play the first move.
+
+The final SL + RL model achieved the following results:
+SL + RL Wins: 596
+SL Wins: 404
+Draws: 0
+Win Rate of SL + RL vs SL: 59.60%
+
+The SL + RL model achieved a 59.6% win rate against the SL baseline, demonstrating that the reinforcement learning refinement phase successfully improves upon the supervised learning policy. This represents a substantial improvement over the pure RL model's performance against SL (44.8%), suggesting that the hybrid approach effectively combines the strengths of both methodologies to achieve superior performance.
+
+#### Performance Across Training Iterations
+
+Performance was tracked across SL + RL training iterations to analyze the learning trajectory when starting from a pretrained supervised learning baseline.
+
+Similar to pure RL, the SL + RL model exhibits improvement through training iterations, but with notably different dynamics. Early iterations begin at approximately 45-50% win rate, which is substantially higher than the ~5-10% starting point of pure RL, reflecting the strong initial policy provided by supervised learning pretraining. From this elevated baseline, the win rate gradually climbs as reinforcement learning refinement optimizes the policy further.
+
+Unlike the sharp performance variance observed in pure RL (fluctuating by 10-15% between consecutive iterations), the SL + RL training exhibits much more stable learning progression with smaller performance variations, typically within a ~5% difference between consecutive iterations. This stability suggests that the supervised learning initialization provides a robust foundation that moderates the exploration-exploitation tradeoffs inherent in reinforcement learning.
+
+This comparison highlights the practical benefits of pretraining: starting from a learned policy significantly reduces training instability and accelerates convergence, while still allowing reinforcement learning refinement to incrementally improve upon the supervised baseline.
+
+#### Improvement upon RL
+
+The SL + RL approach demonstrates substantial advantages in resource-constrained environments. By starting with supervised learning pretraining, the model achieves a 45-50% baseline performance out-of-the-box, compared to the ~5-10% starting point of pure RL. This eliminates wasteful exploration early in training and allows reinforcement learning to focus on incremental policy refinement rather than discovering basic strategy from scratch. The resulting 59.6% win rate against SL (versus RL's 44.8%) shows that SL + RL significantly outperforms pure RL while requiring fewer self-play iterations. The more stable learning progression with smaller performance variance (~5% between iterations) also enables practitioners to reliably converge to a strong model without extensive hyperparameter tuning, making it a practical choice for scenarios with limited computational resources and time budgets.
 
 ### Limitations
 
