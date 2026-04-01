@@ -3,9 +3,9 @@ import copy
 import numpy as np
 from games.base_game import BaseGame, GameState
 
-MIN_BRANCHING_FACTOR = 10  # Minimum number of child nodes to expand per node if available valid actions exceed this number
-MAX_BRANCHING_FACTOR = 15  # Maximum number of child nodes to expand per node
-MAX_ROOT_EXPANSION = 20  # Maximum number of child nodes to expand for the root node
+MIN_BRANCHING_FACTOR = 8  # Minimum number of child nodes to expand per node if available valid actions exceed this number
+MAX_BRANCHING_FACTOR = 12  # Maximum number of child nodes to expand per node
+MAX_ROOT_EXPANSION = 16  # Maximum number of child nodes to expand for the root node
 MAX_EXPANSION_TEMP = 1.2  # Max temperature for controlling expansion with get top actions
 MIN_EXPANSION_TEMP = 0.5  # Min temperature for controlling expansion with get top actions
 PASS_CAP_FACTOR = 500  # Factor to determine the cap for pass action probability based on action count
@@ -69,14 +69,10 @@ class Node:
 
     def get_ucb(self, child: 'Node') -> float:
         '''Calculates the UCB score for a child node.'''
-        # Q value: if child not visited estimate q as slightly lower than q calculated from parent val sum instead of assuming 0 or 1
-        if child.visit_count == 0:
-            q = 1 if (self.visit_count == 0) else (1 + (self.value_sum / self.visit_count)) - 0.25  # If child has never been visited, use parent's value as an estimate
-        else:
-            q = 1 - (child.value_sum / child.visit_count)
-        c = self.c * (1 + 0.25 * np.log(self.visit_count + 1))
+        # Q value is calculated as 1 - (value_sum / visit_count) to represent the win rate for the current player, with a default of 1 for unvisited nodes to encourage exploration
+        q = 1 - (child.value_sum / child.visit_count) if child.visit_count > 0 else 1
         # UCB formula: Q + exploration term
-        return q + (c * child.prior * np.sqrt(self.visit_count + 1) / (1 + child.visit_count))
+        return q + (self.c * child.prior * np.sqrt(self.visit_count + 1) / (1 + child.visit_count))
 
     def get_top_actions(self, policy: np.ndarray, state: GameState) -> tuple[np.ndarray, np.ndarray]:
         '''Returns the indices of the k actions based on the policy probabilities.'''

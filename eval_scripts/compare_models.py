@@ -151,10 +151,11 @@ def get_valid_action(game: BaseGame, game_info: dict, policy: np.ndarray, az: bo
     '''Get a random valid action from the game info.'''
     valid_actions = game.get_valid_actions(game_info)
     policy = policy * valid_actions  # Zero out invalid actions & sharpen the distribution
+    policy **= 3  # Sharpen the distribution to increase the probability of selecting the best moves
     policy /= np.sum(policy) if np.sum(policy) > 0 else 1
     action = None
     while action is None:
-        candidate = np.argmax(policy)  # Sample action based on policy
+        candidate = np.random.choice(len(policy), p=policy)  # Sample action based on policy
         if game.is_valid_action(game_info, candidate):
             action = candidate
         else:
